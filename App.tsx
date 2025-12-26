@@ -434,12 +434,26 @@ const AppContent: React.FC = () => {
     if (phase === GamePhase.BIDDING && isBidding) {
       const activeBids = players.filter(p => p.currentBid > 0);
       const passCount = players.filter(p => p.currentBid === -1).length;
-      const allBidded = players.every(p => p.currentBid !== 0);
       
-      if (allBidded && (activeBids.length === 0 || passCount >= 3)) {
+      // İhale bitiş koşulları:
+      // 1. 3 oyuncu pas geçtiyse ve en az 1 aktif ihale varsa (sadece 1 oyuncu aktif ihale yapıyor)
+      // 2. VEYA tüm oyuncular pas geçtiyse (hiç aktif ihale yok)
+      // 3. VEYA art arda 3 oyuncu pas geçtiyse (son 3 oyuncu pas)
+      
+      // Art arda 3 pas kontrolü: Son 3 oyuncunun hepsi pas geçtiyse
+      const lastThreeIndices = [(biddingPlayerIdx - 1 + 4) % 4, (biddingPlayerIdx - 2 + 4) % 4, (biddingPlayerIdx - 3 + 4) % 4];
+      const lastThreePassed = lastThreeIndices.every(idx => players[idx]?.currentBid === -1);
+      
+      const shouldEndBidding = 
+        (passCount >= 3 && activeBids.length > 0) || // 3+ pas ve aktif ihale var
+        (activeBids.length === 0 && passCount === 4) || // Hepsi pas
+        (activeBids.length === 1 && passCount >= 3) || // 1 aktif, 3+ pas
+        lastThreePassed; // Art arda 3 pas
+      
+      if (shouldEndBidding) {
         // İhale bitti
         setTimeout(() => {
-          if (bidWinnerId !== null) {
+          if (bidWinnerId !== null && activeBids.length > 0) {
             // İhaleyi kazanan koz seçmeli
             const winner = players.find(p => p.id === bidWinnerId);
             if (winner && winner.isBot) {
@@ -493,34 +507,38 @@ const AppContent: React.FC = () => {
 
   // Bot ihale mantığı
   useEffect(() => {
-    if (phase === GamePhase.BIDDING && isBidding && players[biddingPlayerIdx]?.isBot && players[biddingPlayerIdx]?.currentBid === 0) {
+    if (phase === GamePhase.BIDDING && isBidding && players[biddingPlayerIdx]?.isBot) {
+      const bot = players[biddingPlayerIdx];
+      if (!bot) return;
+      
+      // Bot henüz ihale yapmadıysa (currentBid === 0) veya pas geçmediyse (currentBid !== -1)
+      // Ama aslında bot bir kez pas geçtiyse bir daha ihale yapamaz
+      // Sadece henüz ihale yapmamış botlar için çalış
+      if (bot.currentBid === 0) {
       const delay = getSpeedDelay();
       const t = setTimeout(() => {
-        const bot = players[biddingPlayerIdx];
-        if (!bot) return;
-        
-        const botBid = getBotBid(
-          bot.hand,
-          highestBid,
-          gameSettings.difficulty,
-          biddingPlayerIdx
-        );
-        
-        if (botBid) {
-          if (Math.random() > 0.3) {
-            triggerBotMessage(biddingPlayerIdx, 'bid');
+          const botBid = getBotBid(
+            bot.hand,
+            highestBid,
+            gameSettings.difficulty,
+            biddingPlayerIdx
+          );
+          
+          if (botBid) {
+            if (Math.random() > 0.3) {
+              triggerBotMessage(biddingPlayerIdx, 'bid');
+            }
+          } else {
+            // Pas geçti
+            if (Math.random() > 0.5) {
+              setBotMessages(prev => ({...prev, [biddingPlayerIdx]: 'Pas'}));
+              setTimeout(() => {
+                setBotMessages(prev => ({...prev, [biddingPlayerIdx]: null}));
+              }, 1500);
+            }
           }
-        } else {
-          // Pas geçti
-          if (Math.random() > 0.5) {
-            setBotMessages(prev => ({...prev, [biddingPlayerIdx]: 'Pas'}));
-            setTimeout(() => {
-              setBotMessages(prev => ({...prev, [biddingPlayerIdx]: null}));
-            }, 1500);
-          }
-        }
-        
-        makeBid(biddingPlayerIdx, botBid);
+          
+          makeBid(biddingPlayerIdx, botBid);
       }, delay);
       return () => clearTimeout(t);
     }
@@ -1199,8 +1217,8 @@ const AppContent: React.FC = () => {
              )}
              
              {phase === GamePhase.BIDDING && isBidding && (
-                <div className="fixed inset-0 z-[400] bg-black/20 backdrop-blur-sm flex items-center justify-center p-6 transition-all duration-300">
-                  <div className={`bg-[#2d1a0a] p-8 rounded-[3rem] border border-white/10 w-full max-w-sm text-center shadow-2xl animate-pop-in wood-border`}>
+                <div className="fixed inset-0 z-[400] bg-black/20 flex items-center justify-center p-6 transition-all duration-300 pointer-events-none">
+                  <div className={`bg-[#2d1a0a] p-8 rounded-[3rem] border border-white/10 w-full max-w-sm text-center shadow-2xl animate-pop-in wood-border pointer-events-auto`}>
                     <h2 className="text-2xl font-black text-white italic mb-2">İHALE</h2>
                     {biddingPlayerIdx === 0 ? (
                       <>
@@ -1319,7 +1337,7 @@ const AppContent: React.FC = () => {
                </div>
              ))}
 
-             <div className="absolute bottom-6 inset-x-0 flex flex-col items-center z-[50]">
+             <div className={`absolute bottom-6 inset-x-0 flex flex-col items-center ${phase === GamePhase.BIDDING && isBidding ? 'z-[500]' : 'z-[50]'}`}>
                 <div className={`relative mb-6 flex flex-col items-center ${gameSettings.theme === 'kiraathane' ? 'scale-110' : ''}`}>
                    {gameSettings.theme === 'kiraathane' && (
                      <div className="absolute inset-x-[-40px] inset-y-[-10px] bg-gradient-to-b from-[#8b4513] to-[#451a03] rounded-[2.5rem] wood-border -z-10 shadow-2xl"></div>
