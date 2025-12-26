@@ -1,0 +1,98 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Batak Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+
+      body {
+        background-color: #022c22;
+        touch-action: none;
+        overflow: hidden;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+      }
+
+      /* --- AMBIENT BACKGROUND GLOW --- */
+      .ambient-glow {
+        position: fixed;
+        width: 150vw;
+        height: 150vh;
+        background: radial-gradient(circle at center, rgba(16, 185, 129, 0.1) 0%, transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+        animation: pulse-glow 8s ease-in-out infinite alternate;
+      }
+
+      @keyframes pulse-glow {
+        0% { opacity: 0.3; transform: scale(1); }
+        100% { opacity: 0.6; transform: scale(1.1); }
+      }
+
+      /* --- CARD THROW ANIMATIONS --- */
+      @keyframes throw-in-0 {
+        0% { transform: translate3d(0, 400px, 0) rotate(0deg) scale(0.5); opacity: 0; }
+        100% { transform: translate3d(0, 30px, 0) rotate(0deg) scale(1); opacity: 1; }
+      }
+      @keyframes throw-in-1 {
+        0% { transform: translate3d(-400px, 0, 0) rotate(-45deg) scale(0.5); opacity: 0; }
+        100% { transform: translate3d(-50px, 0, 0) rotate(15deg) scale(1); opacity: 1; }
+      }
+      @keyframes throw-in-2 {
+        0% { transform: translate3d(0, -400px, 0) rotate(180deg) scale(0.5); opacity: 0; }
+        100% { transform: translate3d(0, -30px, 0) rotate(0deg) scale(1); opacity: 1; }
+      }
+      @keyframes throw-in-3 {
+        0% { transform: translate3d(400px, 0, 0) rotate(45deg) scale(0.5); opacity: 0; }
+        100% { transform: translate3d(50px, 0, 0) rotate(-15deg) scale(1); opacity: 1; }
+      }
+
+      .animate-pop-in { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+      @keyframes popIn {
+        0% { transform: scale(0.8); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+
+      /* REALISTIC FELT TEXTURE FILTER */
+      .felt-texture {
+        filter: url(#felt-noise);
+      }
+
+      .wood-border {
+        box-shadow: inset 0 0 40px rgba(0,0,0,0.6), 0 10px 20px rgba(0,0,0,0.4);
+        border: 4px solid #3d1c02;
+      }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+        "react/": "https://aistudiocdn.com/react@^19.2.0/",
+        "react": "https://aistudiocdn.com/react@^19.2.0",
+        "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0"
+      }
+    }
+    </script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <!-- SVG Filter for the realistic felt effect -->
+    <svg style="position: absolute; width: 0; height: 0;">
+      <filter id="felt-noise">
+        <feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="3" stitchTiles="stitch" />
+        <feColorMatrix type="saturate" values="0.1" />
+        <feBlend in="SourceGraphic" mode="multiply" />
+      </filter>
+    </svg>
+
+    <div class="ambient-glow"></div>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

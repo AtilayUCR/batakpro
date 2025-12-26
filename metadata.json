@@ -1,0 +1,5 @@
+{
+  "name": "Batak Pro - Web Edition",
+  "description": "A fully functional Ihaleli Batak card game against smart bots. Demonstrates React game logic that can be ported to React Native for App Store deployment.",
+  "requestFramePermissions": []
+}
