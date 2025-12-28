@@ -32,6 +32,10 @@ export enum GameMode {
   TEKLI = 'Tekli Batak',
   UCLU = 'Üçlü Batak',
   HIZLI = 'Hızlı Oyun',
+  YERE_BATAK = 'Yere Batak',
+  ACIK_KOZ = 'Açık Koz',
+  CAPOT = 'Capot',
+  KUMANDA = 'Kumanda Batak',
 }
 
 export interface HouseRules {
@@ -40,6 +44,8 @@ export interface HouseRules {
   batakZorunlulugu: boolean;
   yanlisSaymaCezasi: boolean;
   onikiBatar: boolean;
+  zorunluYukseltme: boolean; // Üstteki karttan yüksek atmak zorunlu
+  bonusEl: boolean; // Son el 2 puan
 }
 
 export interface PlayerStats {
@@ -71,6 +77,7 @@ export interface Quest {
   reward: number;
   completed: boolean;
   completedDate?: string;
+  resetDate?: string; // Sıfırlanma tarihi
 }
 
 export interface Achievement {
@@ -93,6 +100,44 @@ export interface ThemeShop {
   premium?: boolean;
 }
 
+export interface DailyChallenge {
+  id: string;
+  title: string;
+  description: string;
+  mode?: GameMode;
+  target: number;
+  progress: number;
+  reward: number;
+  completed: boolean;
+  expiresAt: string; // ISO date
+}
+
+export interface LastGameResult {
+  mode: GameMode;
+  won: boolean;
+  coinsEarned: number;
+  tricksWon: number;
+  bid: number;
+  wasBatak: boolean;
+  timestamp: string;
+}
+
+export interface PowerUp {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  price: number;
+  owned: number; // Kaç adet var
+}
+
+export interface BidHistoryEntry {
+  playerId: number;
+  playerName: string;
+  bid: number | null; // null = pas
+  timestamp: number;
+}
+
 export interface UserProfile {
   level: number;
   currentXp: number;
@@ -103,14 +148,25 @@ export interface UserProfile {
   avatarId: string;
   ownedTables: string[]; 
   ownedThemes: string[];
+  ownedGameSpeeds: string[]; // Sahip olunan oyun hızları
+  ownedPowerUps: PowerUp[]; // Sahip olunan power-up'lar
   league: string;
   dailyRewards: DailyReward[];
   lastDailyRewardDate?: string;
   streakDays: number;
   quests: Quest[];
+  questsLastResetDate?: string; // Görevlerin son sıfırlanma tarihi
+  weeklyQuestsLastResetDate?: string; // Haftalık görevlerin son sıfırlanma tarihi
   achievements: Achievement[];
   totalCoinsEarned: number;
   totalCoinsSpent: number;
+  dailyChallenge?: DailyChallenge;
+  lastGameResult?: LastGameResult;
+  vibrationEnabled: boolean;
+  botNames?: string[]; // Özelleştirilmiş bot isimleri
+  undoCount: number; // Kullanılabilir undo sayısı
+  hintCount: number; // Kullanılabilir ipucu sayısı
+  streakProtectionCount: number; // Streak koruma sayısı
 }
 
 export interface Player {
@@ -155,4 +211,5 @@ export interface GameSettings {
   houseRules: HouseRules;
   soundEnabled: boolean;
   soundPack: SoundPack;
+  vibrationEnabled: boolean;
 }

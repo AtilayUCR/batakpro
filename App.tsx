@@ -1,14 +1,18 @@
 
 import React, { Component, useState, useEffect, useCallback, useRef } from 'react';
-import { Home, Settings, Trophy, Coins, Check, Play, BarChart3, ShieldCheck, Flame, User as UserIcon, X, Spade, AlertCircle, Skull, Zap, Heart, Layers, Gauge, Palette, ChevronDown, ChevronUp, MessageCircle, TrendingUp, Target, Award, Volume2, VolumeX, Music } from 'lucide-react';
-import { Card, Suit, Rank, Player, GamePhase, PlayedCard, Difficulty, GameSettings, UserProfile, GameMode, HouseRules, CardBack, GameTheme, SoundPack } from './types';
-import { createDeck, shuffleDeck, dealCards, isValidMove, getBotMove, determineTrickWinner, getThreeUniqueBotNames, evaluateHand, getBotQuote, getBotBid, calculateRoundScore, sortHandWithTrump } from './utils/batakLogic';
+import { Home, Settings, Trophy, Coins, Check, Play, BarChart3, ShieldCheck, Flame, User as UserIcon, X, Spade, AlertCircle, Skull, Zap, Heart, Layers, Gauge, Palette, ChevronDown, ChevronUp, MessageCircle, TrendingUp, Target, Award, Volume2, VolumeX, Music, Undo2, Lightbulb, Shield, Smartphone, RotateCcw } from 'lucide-react';
+import { Card, Suit, Rank, Player, GamePhase, PlayedCard, Difficulty, GameSettings, UserProfile, GameMode, HouseRules, CardBack, GameTheme, SoundPack, BidHistoryEntry, LastGameResult, DailyChallenge } from './types';
+import { createDeck, shuffleDeck, dealCards, isValidMove, getBotMove, determineTrickWinner, getThreeUniqueBotNames, evaluateHand, getBotQuote, getBotBid, calculateRoundScore, sortHandWithTrump, getCurrentWinningCard } from './utils/batakLogic';
 import { 
   claimDailyReward, canClaimDailyReward, getCurrentStreakDay, getDailyRewards,
   updateQuestProgress, generateDailyQuests, generateWeeklyQuests,
   checkAndUnlockAchievements, getAllAchievements,
   purchaseTheme, canAffordTheme, getThemePrices,
-  addXp, COINS_REWARDS, XP_REWARDS, getDifficultyCoins
+  addXp, COINS_REWARDS, XP_REWARDS, getDifficultyCoins,
+  resetQuests, shouldResetDailyQuests, shouldResetWeeklyQuests,
+  generateDailyChallenge, shouldResetDailyChallenge, resetDailyChallenge,
+  purchasePowerUp, usePowerUp, POWER_UPS,
+  purchaseGameSpeed, GAME_SPEED_PRICES
 } from './utils/coinsSystem';
 
 // --- AUDIO HELPERS ---
@@ -139,15 +143,25 @@ const AppContent: React.FC = () => {
   const [showProfileEdit, setShowProfileEdit] = useState<boolean>(false);
   const [noBatakStreak, setNoBatakStreak] = useState<number>(0);
   const [playedModes, setPlayedModes] = useState<Set<string>>(new Set());
+  
+  // Yeni state'ler
+  const [bidHistory, setBidHistory] = useState<BidHistoryEntry[]>([]);
+  const [lastTrickWinnerId, setLastTrickWinnerId] = useState<number | undefined>(undefined);
+  const [showPowerUps, setShowPowerUps] = useState<boolean>(false);
+  const [showDailyChallenge, setShowDailyChallenge] = useState<boolean>(false);
+  const [lastPlayedCard, setLastPlayedCard] = useState<{ playerId: number; card: Card } | null>(null);
+  const [canUndo, setCanUndo] = useState<boolean>(false);
+  const [hintCard, setHintCard] = useState<Card | null>(null);
 
   const [gameSettings, setGameSettings] = useState<GameSettings>({
     difficulty: Difficulty.MEDIUM,
     gameSpeed: 'normal',
     theme: 'kiraathane', 
     cardBack: 'green',
-    houseRules: { macaCezasi: false, ilkElKozYasak: true, batakZorunlulugu: true, yanlisSaymaCezasi: false, onikiBatar: true },
+    houseRules: { macaCezasi: false, ilkElKozYasak: true, batakZorunlulugu: true, yanlisSaymaCezasi: false, onikiBatar: true, zorunluYukseltme: false, bonusEl: false },
     soundEnabled: true,
-    soundPack: 'arcade', // Defaulted to Arcade as requested
+    soundPack: 'arcade',
+    vibrationEnabled: true,
   });
 
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
@@ -165,6 +179,12 @@ const AppContent: React.FC = () => {
         if (!parsed.totalCoinsSpent) parsed.totalCoinsSpent = 0;
         if (!parsed.streakDays) parsed.streakDays = 0;
         if (!parsed.xpToNextLevel) parsed.xpToNextLevel = 1000 + (parsed.level || 1) * 250;
+        if (!parsed.ownedGameSpeeds) parsed.ownedGameSpeeds = ['slow', 'normal'];
+        if (!parsed.ownedPowerUps) parsed.ownedPowerUps = [];
+        if (parsed.vibrationEnabled === undefined) parsed.vibrationEnabled = true;
+        if (!parsed.undoCount) parsed.undoCount = 0;
+        if (!parsed.hintCount) parsed.hintCount = 0;
+        if (!parsed.streakProtectionCount) parsed.streakProtectionCount = 0;
         return parsed;
       } catch {
         // Hatalı kayıt, varsayılan değerleri kullan
@@ -174,7 +194,7 @@ const AppContent: React.FC = () => {
       level: 1, 
       currentXp: 0, 
       xpToNextLevel: 1000,
-      coins: 500, // Başlangıç coins
+      coins: 500,
       username: 'OYUNCU', 
       avatarId: '', 
       league: 'Bronz',
@@ -191,12 +211,18 @@ const AppContent: React.FC = () => {
       },
       ownedTables: ['default'],
       ownedThemes: ['kiraathane', 'classic'],
+      ownedGameSpeeds: ['slow', 'normal'],
+      ownedPowerUps: [],
       dailyRewards: getDailyRewards(),
       streakDays: 0,
       quests: [...generateDailyQuests(), ...generateWeeklyQuests()],
       achievements: getAllAchievements(),
       totalCoinsEarned: 500,
       totalCoinsSpent: 0,
+      vibrationEnabled: true,
+      undoCount: 0,
+      hintCount: 0,
+      streakProtectionCount: 0,
     };
   });
 
@@ -267,6 +293,32 @@ const AppContent: React.FC = () => {
       // setShowDailyReward(true);
     }
   }, [phase, userProfile]);
+
+  // Görev sıfırlama kontrolü
+  useEffect(() => {
+    if (phase === GamePhase.LOBBY) {
+      // Günlük ve haftalık görevleri kontrol et
+      if (shouldResetDailyQuests(userProfile) || shouldResetWeeklyQuests(userProfile)) {
+        const updated = resetQuests(userProfile);
+        setUserProfile(updated);
+        localStorage.setItem('batakProfile', JSON.stringify(updated));
+      }
+      
+      // Günlük challenge kontrolü
+      if (shouldResetDailyChallenge(userProfile)) {
+        const updated = resetDailyChallenge(userProfile);
+        setUserProfile(updated);
+        localStorage.setItem('batakProfile', JSON.stringify(updated));
+      }
+    }
+  }, [phase]);
+  
+  // Vibrasyon fonksiyonu
+  const vibrate = (pattern: number | number[] = 50) => {
+    if (gameSettings.vibrationEnabled && userProfile.vibrationEnabled && navigator.vibrate) {
+      navigator.vibrate(pattern);
+    }
+  };
 
   const playSfx = (key: 'deal' | 'play') => {
     if (!gameSettings.soundEnabled) return;
@@ -369,25 +421,40 @@ const AppContent: React.FC = () => {
     setHighestBid(0);
     setBiddingPlayerIdx(0);
     setLastGameCoins(0);
+    setBidHistory([]); // İhale geçmişini sıfırla
+    setLastTrickWinnerId(undefined);
+    setLastPlayedCard(null);
+    setCanUndo(false);
+    setHintCard(null);
 
     // Oynanan modları kaydet
     setPlayedModes(prev => new Set([...prev, selectedMode]));
 
-    if (selectedMode === GameMode.IHALELI || selectedMode === GameMode.ESLI || selectedMode === GameMode.TEKLI || selectedMode === GameMode.UCLU) {
+    // Mod bazlı başlangıç ayarları
+    const biddingModes = [GameMode.IHALELI, GameMode.ESLI, GameMode.TEKLI, GameMode.UCLU, GameMode.KUMANDA];
+    const noTrumpModes = [GameMode.IHALESIZ, GameMode.YERE_BATAK];
+    const spadeTrumpModes = [GameMode.KOZ_MACA, GameMode.HIZLI, GameMode.ACIK_KOZ];
+    
+    if (biddingModes.includes(selectedMode)) {
       setIsBidding(true);
       setPhase(GamePhase.BIDDING);
-    } else if (selectedMode === GameMode.KOZ_MACA) {
-      setTrumpSuit(Suit.SPADES);
-      setIsBidding(false);
-      setPhase(GamePhase.PLAYING);
-    } else if (selectedMode === GameMode.IHALESIZ) {
-      // İhalesiz: İlk eli kazanan koz seçer, başlangıçta koz yok
+      // Açık Koz modunda koz açıkça gösterilir
+      if (selectedMode === GameMode.ACIK_KOZ) {
+        const suits = [Suit.SPADES, Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS];
+        setTrumpSuit(suits[Math.floor(Math.random() * suits.length)]);
+      }
+    } else if (noTrumpModes.includes(selectedMode)) {
+      // İhalesiz ve Yere Batak: İlk eli kazanan koz seçer
       setTrumpSuit(null);
       setIsBidding(false);
       setPhase(GamePhase.PLAYING);
-    } else if (selectedMode === GameMode.HIZLI) {
-      // Hızlı oyun: 6 el, koz maça
+    } else if (spadeTrumpModes.includes(selectedMode)) {
       setTrumpSuit(Suit.SPADES);
+      setIsBidding(false);
+      setPhase(GamePhase.PLAYING);
+    } else if (selectedMode === GameMode.CAPOT) {
+      // Capot: Koz yok veya rastgele
+      setTrumpSuit(null);
       setIsBidding(false);
       setPhase(GamePhase.PLAYING);
     } else {
@@ -398,6 +465,17 @@ const AppContent: React.FC = () => {
   };
 
   const makeBid = (playerId: number, bid: number | null) => {
+    // İhale geçmişine ekle
+    const playerName = players[playerId]?.name || `Oyuncu ${playerId}`;
+    setBidHistory(prev => [...prev, {
+      playerId,
+      playerName,
+      bid,
+      timestamp: Date.now(),
+    }]);
+    
+    vibrate(30); // Haptic feedback
+    
     setPlayers(prev => {
       const updated = prev.map(p => {
         if (p.id === playerId) {
@@ -422,7 +500,8 @@ const AppContent: React.FC = () => {
       }
       
       // Sıradaki oyuncuya geç
-      const nextPlayer = (playerId + 1) % 4;
+      const playerCount = prev.length;
+      const nextPlayer = (playerId + 1) % playerCount;
       setBiddingPlayerIdx(nextPlayer);
       
       return updated;
@@ -490,8 +569,20 @@ const AppContent: React.FC = () => {
   };
 
   const playCard = (playerId: number, card: Card) => {
-    if (currentTrick.length >= 4 || isBidding) return;
+    const playerCount = players.length;
+    if (currentTrick.length >= playerCount || isBidding) return;
+    
     playSfx('play');
+    vibrate(20);
+    
+    // Undo için son hamleyi kaydet (sadece kullanıcı için)
+    if (playerId === 0 && currentTrick.length === 0) {
+      setLastPlayedCard({ playerId, card });
+      setCanUndo(true);
+    } else {
+      setCanUndo(false);
+    }
+    
     setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, hand: p.hand.filter(c => c.id !== card.id) } : p));
     if (card.suit === trumpSuit) setSpadesBroken(true);
     const played = { playerId, card };
@@ -502,7 +593,62 @@ const AppContent: React.FC = () => {
       triggerBotMessage(playerId, 'play');
     }
 
-    if (currentTrick.length < 3) setCurrentPlayerIdx((playerId + 1) % 4);
+    if (currentTrick.length < playerCount - 1) setCurrentPlayerIdx((playerId + 1) % playerCount);
+  };
+  
+  // Geri al (Undo) fonksiyonu
+  const handleUndo = () => {
+    if (!canUndo || !lastPlayedCard || userProfile.undoCount <= 0) return;
+    
+    // Power-up kullan
+    const result = usePowerUp(userProfile, 'undo');
+    if (!result.success) return;
+    
+    setUserProfile(result.newProfile);
+    localStorage.setItem('batakProfile', JSON.stringify(result.newProfile));
+    
+    // Kartı geri ekle
+    setPlayers(prev => prev.map(p => {
+      if (p.id === lastPlayedCard.playerId) {
+        return { ...p, hand: [...p.hand, lastPlayedCard.card] };
+      }
+      return p;
+    }));
+    
+    // Trick'ten kaldır
+    setCurrentTrick(prev => prev.filter(pt => pt.card.id !== lastPlayedCard.card.id));
+    setVisualTrick(prev => prev.filter(pt => pt.card.id !== lastPlayedCard.card.id));
+    
+    setCanUndo(false);
+    setLastPlayedCard(null);
+    setCurrentPlayerIdx(0);
+  };
+  
+  // İpucu fonksiyonu
+  const handleHint = () => {
+    if (userProfile.hintCount <= 0 || currentPlayerIdx !== 0) return;
+    
+    // Power-up kullan
+    const result = usePowerUp(userProfile, 'hint');
+    if (!result.success) return;
+    
+    setUserProfile(result.newProfile);
+    localStorage.setItem('batakProfile', JSON.stringify(result.newProfile));
+    
+    // En iyi kartı bul
+    const hand = players[0]?.hand || [];
+    const legalMoves = hand.filter(card => 
+      isValidMove(card, hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules)
+    );
+    
+    if (legalMoves.length > 0) {
+      // Basit strateji: en yüksek kartı öner
+      legalMoves.sort((a, b) => b.rank - a.rank);
+      setHintCard(legalMoves[0]);
+      
+      // 3 saniye sonra ipucunu kaldır
+      setTimeout(() => setHintCard(null), 3000);
+    }
   };
 
   // Bot ihale mantığı
@@ -730,6 +876,49 @@ const AppContent: React.FC = () => {
         });
         updated = achievementResult.newProfile;
         
+        // Son oyun sonucunu kaydet
+        updated.lastGameResult = {
+          mode: selectedMode,
+          won: isUserWinner,
+          coinsEarned,
+          tricksWon: userPlayer.tricksWon,
+          bid: userPlayer.currentBid,
+          wasBatak: isUserBatak,
+          timestamp: new Date().toISOString(),
+        };
+        
+        // Günlük challenge progress
+        if (updated.dailyChallenge && !updated.dailyChallenge.completed) {
+          let challengeProgress = updated.dailyChallenge.progress;
+          const challenge = updated.dailyChallenge;
+          
+          if (challenge.id.includes('win') && isUserWinner) {
+            if (!challenge.mode || challenge.mode === selectedMode) {
+              challengeProgress += 1;
+            }
+          } else if (challenge.id.includes('play')) {
+            challengeProgress += 1;
+          } else if (challenge.id.includes('tricks')) {
+            challengeProgress += userPlayer.tricksWon;
+          } else if (challenge.id.includes('no_batak') && !isUserBatak) {
+            challengeProgress += 1;
+          } else if (challenge.id.includes('perfect') && perfectGame) {
+            challengeProgress = 1;
+          }
+          
+          const challengeCompleted = challengeProgress >= challenge.target;
+          updated.dailyChallenge = {
+            ...challenge,
+            progress: challengeProgress,
+            completed: challengeCompleted,
+          };
+          
+          if (challengeCompleted && !challenge.completed) {
+            updated.coins += challenge.reward;
+            updated.totalCoinsEarned += challenge.reward;
+          }
+        }
+        
         // LocalStorage'a kaydet
         localStorage.setItem('batakProfile', JSON.stringify(updated));
         
@@ -833,16 +1022,20 @@ const AppContent: React.FC = () => {
         </h1>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3 w-full max-w-lg mb-6">
+      <div className="grid grid-cols-4 gap-2 sm:gap-3 w-full max-w-2xl mb-6">
         {[
-          { mode: GameMode.IHALELI, icon: <Zap />, label: 'İHALELİ' },
-          { mode: GameMode.KOZ_MACA, icon: <Spade />, label: 'KOZ MAÇA' },
-          { mode: GameMode.IHALESIZ, icon: <Flame />, label: 'İHALESİZ' },
-          { mode: GameMode.ESLI, icon: <ShieldCheck />, label: 'EŞLİ' },
-          { mode: GameMode.TEKLI, icon: <UserIcon />, label: 'TEKLİ' },
-          { mode: GameMode.UCLU, icon: <Layers />, label: 'ÜÇLÜ' },
-          { mode: GameMode.HIZLI, icon: <Zap />, label: 'HIZLI' }
-        ].map(({ mode, icon, label }) => (
+          { mode: GameMode.IHALELI, icon: <Zap />, label: 'İHALELİ', desc: 'Klasik ihale' },
+          { mode: GameMode.KOZ_MACA, icon: <Spade />, label: 'KOZ MAÇA', desc: 'Koz her zaman ♠' },
+          { mode: GameMode.IHALESIZ, icon: <Flame />, label: 'İHALESİZ', desc: 'İhale yok' },
+          { mode: GameMode.ESLI, icon: <ShieldCheck />, label: 'EŞLİ', desc: 'Takım oyunu' },
+          { mode: GameMode.TEKLI, icon: <UserIcon />, label: 'TEKLİ', desc: '1v1 düello' },
+          { mode: GameMode.UCLU, icon: <Layers />, label: 'ÜÇLÜ', desc: '3 oyuncu' },
+          { mode: GameMode.HIZLI, icon: <Zap />, label: 'HIZLI', desc: '6 el' },
+          { mode: GameMode.YERE_BATAK, icon: <Target />, label: 'YERE', desc: 'Koz yere atılır' },
+          { mode: GameMode.ACIK_KOZ, icon: <Award />, label: 'AÇIK KOZ', desc: 'Koz açık' },
+          { mode: GameMode.CAPOT, icon: <Skull />, label: 'CAPOT', desc: 'Hiç el alma' },
+          { mode: GameMode.KUMANDA, icon: <Trophy />, label: 'KUMANDA', desc: 'Turnuva modu' },
+        ].map(({ mode, icon, label, desc }) => (
           <button 
             key={mode} 
             onClick={() => { 
@@ -882,6 +1075,63 @@ const AppContent: React.FC = () => {
         >
           <Award size={16} />
           BAŞARIMLAR
+        </button>
+      </div>
+      
+      {/* Son Oyun Özeti */}
+      {userProfile.lastGameResult && (
+        <div className="w-full max-w-lg mb-4 bg-white/5 rounded-2xl p-4 border border-white/10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${userProfile.lastGameResult.won ? 'bg-emerald-500' : 'bg-rose-500'}`}>
+                {userProfile.lastGameResult.won ? <Trophy size={20} className="text-white" /> : <Skull size={20} className="text-white" />}
+              </div>
+              <div>
+                <div className="text-white font-black text-sm">{userProfile.lastGameResult.won ? 'KAZANDIN!' : 'KAYBETTİN'}</div>
+                <div className="text-white/40 text-[10px]">{userProfile.lastGameResult.mode} - {userProfile.lastGameResult.tricksWon} el</div>
+              </div>
+            </div>
+            <div className={`font-black text-lg ${userProfile.lastGameResult.coinsEarned >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {userProfile.lastGameResult.coinsEarned >= 0 ? '+' : ''}{userProfile.lastGameResult.coinsEarned} 🪙
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Günlük Challenge */}
+      {userProfile.dailyChallenge && !userProfile.dailyChallenge.completed && (
+        <div className="w-full max-w-lg mb-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-2xl p-4 border border-purple-400/30">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Flame size={16} className="text-orange-400" />
+              <span className="text-white font-black text-xs uppercase">GÜNLÜK CHALLENGE</span>
+            </div>
+            <span className="text-yellow-400 font-black text-sm">{userProfile.dailyChallenge.reward} 🪙</span>
+          </div>
+          <div className="text-white text-sm font-bold mb-2">{userProfile.dailyChallenge.title}</div>
+          <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-purple-400 to-pink-400 rounded-full transition-all"
+              style={{ width: `${Math.min((userProfile.dailyChallenge.progress / userProfile.dailyChallenge.target) * 100, 100)}%` }}
+            />
+          </div>
+          <div className="text-white/40 text-[10px] mt-1">{userProfile.dailyChallenge.progress} / {userProfile.dailyChallenge.target}</div>
+        </div>
+      )}
+      
+      {/* Power-Up'lar */}
+      <div className="w-full max-w-lg mb-4 flex gap-2">
+        <button 
+          onClick={() => setShowPowerUps(true)}
+          className="flex-1 bg-white/5 border border-white/10 text-white font-bold py-2 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
+        >
+          <Zap size={14} className="text-yellow-400" />
+          POWER-UP'LAR
+          {(userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount) > 0 && (
+            <span className="bg-emerald-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+              {userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount}
+            </span>
+          )}
         </button>
       </div>
       
@@ -1041,11 +1291,21 @@ const AppContent: React.FC = () => {
                   <X size={20} />
                 </button>
               </div>
-              <div className="p-8 space-y-3">
-                {['ilkElKozYasak', 'macaCezasi', 'batakZorunlulugu', 'onikiBatar'].map(rule => (
-                   <div key={rule} className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5 cursor-pointer hover:bg-black/30 transition-all" onClick={() => setGameSettings(s => ({...s, houseRules: {...s.houseRules, [rule]: !(s.houseRules as any)[rule]}}))}>
-                      <span className="text-white text-[11px] font-black uppercase tracking-wider">{rule.replace(/([A-Z])/g, ' $1')}</span>
-                      <div className={`w-10 h-5 rounded-full transition-all relative ${ (gameSettings.houseRules as any)[rule] ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ (gameSettings.houseRules as any)[rule] ? 'translate-x-5' : '' }`}></div></div>
+              <div className="p-8 space-y-3 max-h-[60vh] overflow-y-auto">
+                {[
+                  { key: 'ilkElKozYasak', label: 'İlk El Koz Yasak', desc: 'İlk elde koz atılamaz' },
+                  { key: 'macaCezasi', label: 'Maça Cezası', desc: '0 el alana ek ceza' },
+                  { key: 'batakZorunlulugu', label: 'Batak Zorunlu', desc: 'İhale tutturulmalı' },
+                  { key: 'onikiBatar', label: '12 Batar', desc: '12 ihale özel ceza' },
+                  { key: 'zorunluYukseltme', label: 'Zorunlu Yükseltme', desc: 'Daha yüksek kart atmalı' },
+                  { key: 'bonusEl', label: 'Bonus El', desc: 'Son el +20 puan' },
+                ].map(({ key, label, desc }) => (
+                   <div key={key} className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5 cursor-pointer hover:bg-black/30 transition-all" onClick={() => setGameSettings(s => ({...s, houseRules: {...s.houseRules, [key]: !(s.houseRules as any)[key]}}))}>
+                      <div>
+                        <span className="text-white text-[11px] font-black uppercase tracking-wider block">{label}</span>
+                        <span className="text-white/40 text-[9px]">{desc}</span>
+                      </div>
+                      <div className={`w-10 h-5 rounded-full transition-all relative ${ (gameSettings.houseRules as any)[key] ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ (gameSettings.houseRules as any)[key] ? 'translate-x-5' : '' }`}></div></div>
                    </div>
                 ))}
                 <button onClick={() => {
@@ -1068,6 +1328,22 @@ const AppContent: React.FC = () => {
                      <span className="text-white text-[11px] font-black uppercase tracking-wider">SES EFEKTLERİ</span>
                    </div>
                    <div className={`w-10 h-5 rounded-full transition-all relative ${ gameSettings.soundEnabled ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ gameSettings.soundEnabled ? 'translate-x-5' : '' }`}></div></div>
+                 </div>
+                 
+                 {/* VIBRATION */}
+                 <div className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5 cursor-pointer hover:bg-black/30 transition-all" onClick={() => {
+                   setGameSettings(s => ({...s, vibrationEnabled: !s.vibrationEnabled}));
+                   setUserProfile(p => {
+                     const updated = {...p, vibrationEnabled: !p.vibrationEnabled};
+                     localStorage.setItem('batakProfile', JSON.stringify(updated));
+                     return updated;
+                   });
+                 }}>
+                   <div className="flex items-center gap-3">
+                     <Smartphone size={18} className={gameSettings.vibrationEnabled ? 'text-emerald-400' : 'text-white/20'}/>
+                     <span className="text-white text-[11px] font-black uppercase tracking-wider">TİTREŞİM</span>
+                   </div>
+                   <div className={`w-10 h-5 rounded-full transition-all relative ${ gameSettings.vibrationEnabled ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ gameSettings.vibrationEnabled ? 'translate-x-5' : '' }`}></div></div>
                  </div>
 
                  {/* DIFFICULTY */}
@@ -1152,7 +1428,8 @@ const AppContent: React.FC = () => {
                        { speed: 'fast', price: 50, label: 'fast' },
                        { speed: 'turbo', price: 100, label: 'turbo' }
                      ].map(({ speed, price, label }) => {
-                       const isOwned = price === 0 || userProfile.ownedThemes.includes(`speed_${speed}`);
+                       const ownedSpeeds = userProfile.ownedGameSpeeds || ['slow', 'normal'];
+                       const isOwned = price === 0 || ownedSpeeds.includes(speed);
                        const canAfford = userProfile.coins >= price;
                        const isSelected = gameSettings.gameSpeed === speed;
                        
@@ -1163,17 +1440,12 @@ const AppContent: React.FC = () => {
                              if (isOwned) {
                                setGameSettings(prev => ({...prev, gameSpeed: speed as any}));
                              } else if (canAfford) {
-                               setUserProfile(prev => {
-                                 const updated = {
-                                   ...prev,
-                                   coins: prev.coins - price,
-                                   ownedThemes: [...prev.ownedThemes, `speed_${speed}`],
-                                   totalCoinsSpent: prev.totalCoinsSpent + price
-                                 };
-                                 localStorage.setItem('batakProfile', JSON.stringify(updated));
-                                 return updated;
-                               });
-                               setGameSettings(prev => ({...prev, gameSpeed: speed as any}));
+                               const result = purchaseGameSpeed(userProfile, speed);
+                               if (result.success) {
+                                 setUserProfile(result.newProfile);
+                                 localStorage.setItem('batakProfile', JSON.stringify(result.newProfile));
+                                 setGameSettings(prev => ({...prev, gameSpeed: speed as any}));
+                               }
                              } else {
                                setShowSettings(false);
                                setShowThemeShop(true);
@@ -1218,18 +1490,33 @@ const AppContent: React.FC = () => {
              
              {phase === GamePhase.BIDDING && isBidding && (
                 <div className="fixed inset-0 z-[400] bg-black/20 flex items-center justify-center p-6 transition-all duration-300 pointer-events-none">
-                  <div className={`bg-[#2d1a0a] p-8 rounded-[3rem] border border-white/10 w-full max-w-sm text-center shadow-2xl animate-pop-in wood-border pointer-events-auto`}>
+                  <div className={`bg-[#2d1a0a] p-8 rounded-[3rem] border border-white/10 w-full max-w-md text-center shadow-2xl animate-pop-in wood-border pointer-events-auto`}>
                     <h2 className="text-2xl font-black text-white italic mb-2">İHALE</h2>
+                    
+                    {/* İhale Geçmişi */}
+                    {bidHistory.length > 0 && (
+                      <div className="mb-4 max-h-24 overflow-y-auto bg-black/20 rounded-xl p-2">
+                        {bidHistory.slice(-6).map((entry, idx) => (
+                          <div key={idx} className="flex justify-between text-xs py-1 border-b border-white/5 last:border-0">
+                            <span className={`font-bold ${entry.playerId === 0 ? 'text-emerald-400' : 'text-white/60'}`}>{entry.playerName}</span>
+                            <span className={entry.bid ? 'text-yellow-400' : 'text-rose-400'}>
+                              {entry.bid ? entry.bid : 'PAS'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
                     {biddingPlayerIdx === 0 ? (
                       <>
                         <div className="mb-4 text-white/60 text-sm">En Yüksek İhale: {highestBid > 0 ? highestBid : 'Yok'}</div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-5 gap-2">
                             {[4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(num => (
                               <button 
                                 key={num} 
                                 onClick={() => startBidding(num)} 
                                 disabled={num <= highestBid}
-                                className={`font-black py-4 rounded-2xl text-xl shadow-lg transition-all active:scale-95 ${
+                                className={`font-black py-3 rounded-xl text-lg shadow-lg transition-all active:scale-95 ${
                                   num <= highestBid 
                                     ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
                                     : 'bg-emerald-600 hover:bg-emerald-500 text-white'
@@ -1238,8 +1525,8 @@ const AppContent: React.FC = () => {
                                 {num}
                               </button>
                             ))}
-                            <button onClick={() => makeBid(0, null)} className="col-span-3 bg-white/10 text-white font-black py-4 rounded-2xl hover:bg-white/20 transition-all uppercase tracking-widest">PAS</button>
                     </div>
+                            <button onClick={() => makeBid(0, null)} className="w-full mt-2 bg-white/10 text-white font-black py-4 rounded-2xl hover:bg-white/20 transition-all uppercase tracking-widest">PAS</button>
                       </>
                     ) : (
                       <div className="py-8">
@@ -1298,6 +1585,67 @@ const AppContent: React.FC = () => {
                 <button onClick={() => setShowSettings(true)} className="w-12 h-12 bg-black/40 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/10 shadow-lg hover:bg-black/60"><Settings size={20}/></button>
                 <button onClick={() => setPhase(GamePhase.LOBBY)} className="w-12 h-12 bg-black/40 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/10 shadow-lg hover:bg-black/60"><Home size={20}/></button>
              </div>
+
+             {/* El Sayısı ve Koz Göstergesi */}
+             <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-4 z-[100]">
+               <div className="bg-black/60 px-4 py-2 rounded-2xl flex items-center gap-3 border border-white/10">
+                 {/* Kalan El */}
+                 <div className="flex items-center gap-2">
+                   <span className="text-white/60 text-xs font-bold">EL</span>
+                   <span className="text-white font-black text-lg">{trickCount + 1}</span>
+                   <span className="text-white/40 text-xs">/ {selectedMode === GameMode.HIZLI ? 6 : 13}</span>
+                 </div>
+                 
+                 {/* Koz */}
+                 {trumpSuit && (
+                   <div className="flex items-center gap-2 border-l border-white/20 pl-3">
+                     <span className="text-white/60 text-xs font-bold">KOZ</span>
+                     <span className={`text-2xl ${trumpSuit === Suit.HEARTS || trumpSuit === Suit.DIAMONDS ? 'text-rose-500' : 'text-white'}`}>
+                       {trumpSuit}
+                     </span>
+                   </div>
+                 )}
+                 
+                 {/* Mod */}
+                 <div className="flex items-center gap-1 border-l border-white/20 pl-3">
+                   <span className="text-emerald-400 text-[10px] font-black uppercase">{selectedMode}</span>
+                 </div>
+               </div>
+             </div>
+             
+             {/* Power-Up Butonları - Oyun sırasında */}
+             {currentPlayerIdx === 0 && phase === GamePhase.PLAYING && (
+               <div className="absolute bottom-32 left-4 flex flex-col gap-2 z-[100]">
+                 {/* Geri Al */}
+                 {canUndo && userProfile.undoCount > 0 && (
+                   <button 
+                     onClick={handleUndo}
+                     className="bg-orange-500/90 text-white p-3 rounded-xl shadow-lg hover:scale-110 transition-all flex items-center gap-2"
+                   >
+                     <Undo2 size={16} />
+                     <span className="text-xs font-bold">{userProfile.undoCount}</span>
+                   </button>
+                 )}
+                 
+                 {/* İpucu */}
+                 {userProfile.hintCount > 0 && (
+                   <button 
+                     onClick={handleHint}
+                     className="bg-yellow-500/90 text-white p-3 rounded-xl shadow-lg hover:scale-110 transition-all flex items-center gap-2"
+                   >
+                     <Lightbulb size={16} />
+                     <span className="text-xs font-bold">{userProfile.hintCount}</span>
+                   </button>
+                 )}
+               </div>
+             )}
+             
+             {/* İpucu Göstergesi */}
+             {hintCard && (
+               <div className="absolute bottom-32 left-1/2 -translate-x-1/2 bg-yellow-500 text-black px-4 py-2 rounded-xl font-black text-sm z-[150] animate-pulse">
+                 💡 Önerilen: {hintCard.rank > 10 ? ['J', 'Q', 'K', 'A'][hintCard.rank - 11] : hintCard.rank}{hintCard.suit}
+               </div>
+             )}
 
              <div className="absolute top-[42%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 flex items-center justify-center pointer-events-none">
                 {visualTrick.map(pt => (
@@ -1571,6 +1919,77 @@ const AppContent: React.FC = () => {
                       </div>
                     )}
                     <div className="text-yellow-400 font-black text-xs text-center">{achievement.reward} 🪙</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Power-Up'lar Modal */}
+        {showPowerUps && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto`}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-white italic">POWER-UP'LAR</h2>
+                <button onClick={() => setShowPowerUps(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+              </div>
+              
+              {/* Mevcut Power-Up'lar */}
+              <div className="mb-6 bg-white/5 rounded-2xl p-4">
+                <h3 className="text-white font-bold text-sm mb-3">Sahip Olduklarım</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <div className="text-2xl mb-1">↩️</div>
+                    <div className="text-white text-xs font-bold">Geri Al</div>
+                    <div className="text-emerald-400 font-black">{userProfile.undoCount || 0}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl mb-1">💡</div>
+                    <div className="text-white text-xs font-bold">İpucu</div>
+                    <div className="text-emerald-400 font-black">{userProfile.hintCount || 0}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl mb-1">🛡️</div>
+                    <div className="text-white text-xs font-bold">Streak Koruma</div>
+                    <div className="text-emerald-400 font-black">{userProfile.streakProtectionCount || 0}</div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Satın Alınabilir Power-Up'lar */}
+              <h3 className="text-white font-bold text-sm mb-3">Satın Al</h3>
+              <div className="space-y-3">
+                {POWER_UPS.map(powerUp => (
+                  <div 
+                    key={powerUp.id}
+                    className="flex items-center justify-between bg-white/5 p-4 rounded-2xl border border-white/10"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="text-3xl">{powerUp.icon}</div>
+                      <div>
+                        <div className="text-white font-bold text-sm">{powerUp.name}</div>
+                        <div className="text-white/40 text-[10px]">{powerUp.description}</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const result = purchasePowerUp(userProfile, powerUp.id);
+                        if (result.success) {
+                          setUserProfile(result.newProfile);
+                          localStorage.setItem('batakProfile', JSON.stringify(result.newProfile));
+                          vibrate(50);
+                        }
+                      }}
+                      disabled={userProfile.coins < powerUp.price}
+                      className={`px-4 py-2 rounded-xl font-black text-sm ${
+                        userProfile.coins >= powerUp.price
+                          ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                          : 'bg-white/10 text-white/40 cursor-not-allowed'
+                      }`}
+                    >
+                      {powerUp.price} 🪙
+                    </button>
                   </div>
                 ))}
               </div>

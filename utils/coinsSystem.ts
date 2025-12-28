@@ -1,4 +1,4 @@
-import { UserProfile, Quest, Achievement, DailyReward, GameMode } from '../types';
+import { UserProfile, Quest, Achievement, DailyReward, GameMode, DailyChallenge, PowerUp } from '../types';
 
 // --- COINS REWARDS ---
 export const COINS_REWARDS = {
@@ -16,7 +16,20 @@ export const COINS_REWARDS = {
   NO_BATAK_STREAK: 500, // 5 oyun batak yapmama
   LOSE_GAME: 20, // Kaybetme cezası (minimum)
   LOSE_BATAK: 50, // Batak yapma cezası
+  DAILY_CHALLENGE: 500, // Günlük challenge ödülü
+  STREAK_PROTECTION: 200, // Streak koruma fiyatı
+  UNDO_PRICE: 50, // Geri al fiyatı
+  HINT_PRICE: 30, // İpucu fiyatı
 };
+
+// Power-up'lar
+export const POWER_UPS: PowerUp[] = [
+  { id: 'undo', name: 'Geri Al', description: 'Son hamleyi geri al', icon: '↩️', price: 50, owned: 0 },
+  { id: 'hint', name: 'İpucu', description: 'En iyi hamleyi göster', icon: '💡', price: 30, owned: 0 },
+  { id: 'streak_protection', name: 'Streak Koruma', description: 'Streak kırılmasını engelle', icon: '🛡️', price: 200, owned: 0 },
+  { id: 'double_coins', name: '2x Coin', description: '1 saat boyunca 2x coin', icon: '💰', price: 100, owned: 0 },
+  { id: 'double_xp', name: '2x XP', description: '1 saat boyunca 2x XP', icon: '⚡', price: 100, owned: 0 },
+];
 
 // Zorluk seviyesine göre coin ödülleri
 export const getDifficultyCoins = (difficulty: string): { win: number; lose: number; batak: number } => {
@@ -151,6 +164,7 @@ export const claimDailyReward = (profile: UserProfile): { newProfile: UserProfil
 
 // --- QUESTS ---
 export const generateDailyQuests = (): Quest[] => {
+  const today = new Date().toISOString();
   return [
     {
       id: 'daily_win_3',
@@ -161,6 +175,7 @@ export const generateDailyQuests = (): Quest[] => {
       progress: 0,
       reward: 200,
       completed: false,
+      resetDate: today,
     },
     {
       id: 'daily_play_5',
@@ -171,6 +186,7 @@ export const generateDailyQuests = (): Quest[] => {
       progress: 0,
       reward: 150,
       completed: false,
+      resetDate: today,
     },
     {
       id: 'daily_tricks_30',
@@ -181,6 +197,7 @@ export const generateDailyQuests = (): Quest[] => {
       progress: 0,
       reward: 250,
       completed: false,
+      resetDate: today,
     },
     {
       id: 'daily_no_batak',
@@ -191,11 +208,13 @@ export const generateDailyQuests = (): Quest[] => {
       progress: 0,
       reward: 300,
       completed: false,
+      resetDate: today,
     },
   ];
 };
 
 export const generateWeeklyQuests = (): Quest[] => {
+  const today = new Date().toISOString();
   return [
     {
       id: 'weekly_win_20',
@@ -206,6 +225,7 @@ export const generateWeeklyQuests = (): Quest[] => {
       progress: 0,
       reward: 1000,
       completed: false,
+      resetDate: today,
     },
     {
       id: 'weekly_play_50',
@@ -216,6 +236,7 @@ export const generateWeeklyQuests = (): Quest[] => {
       progress: 0,
       reward: 800,
       completed: false,
+      resetDate: today,
     },
     {
       id: 'weekly_perfect_3',
@@ -226,8 +247,53 @@ export const generateWeeklyQuests = (): Quest[] => {
       progress: 0,
       reward: 1500,
       completed: false,
+      resetDate: today,
     },
   ];
+};
+
+// Görev sıfırlama kontrolü
+export const shouldResetDailyQuests = (profile: UserProfile): boolean => {
+  if (!profile.questsLastResetDate) return true;
+  const lastReset = new Date(profile.questsLastResetDate);
+  const today = new Date();
+  return lastReset.toDateString() !== today.toDateString();
+};
+
+export const shouldResetWeeklyQuests = (profile: UserProfile): boolean => {
+  if (!profile.weeklyQuestsLastResetDate) return true;
+  const lastReset = new Date(profile.weeklyQuestsLastResetDate);
+  const today = new Date();
+  
+  // Pazartesi günü sıfırla
+  const getWeekNumber = (d: Date) => {
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    const days = Math.floor((d.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+    return Math.ceil((days + startOfYear.getDay() + 1) / 7);
+  };
+  
+  return getWeekNumber(lastReset) !== getWeekNumber(today) || lastReset.getFullYear() !== today.getFullYear();
+};
+
+export const resetQuests = (profile: UserProfile): UserProfile => {
+  let updated = { ...profile };
+  const now = new Date().toISOString();
+  
+  if (shouldResetDailyQuests(profile)) {
+    const dailyQuests = generateDailyQuests();
+    const weeklyQuests = profile.quests.filter(q => q.type === 'weekly');
+    updated.quests = [...dailyQuests, ...weeklyQuests];
+    updated.questsLastResetDate = now;
+  }
+  
+  if (shouldResetWeeklyQuests(profile)) {
+    const dailyQuests = updated.quests.filter(q => q.type === 'daily');
+    const weeklyQuests = generateWeeklyQuests();
+    updated.quests = [...dailyQuests, ...weeklyQuests];
+    updated.weeklyQuestsLastResetDate = now;
+  }
+  
+  return updated;
 };
 
 export const updateQuestProgress = (
@@ -265,6 +331,129 @@ export const updateQuestProgress = (
     },
     completed,
     coinsEarned,
+  };
+};
+
+// --- DAILY CHALLENGE ---
+const CHALLENGE_TEMPLATES = [
+  { id: 'win_with_mode', title: '{mode} ile 3 Oyun Kazan', description: '{mode} modunda 3 oyun kazan', target: 3 },
+  { id: 'no_batak_today', title: 'Batak Yapma', description: 'Bugün hiç batak yapma', target: 1 },
+  { id: 'win_streak_3', title: '3 Üst Üste Kazan', description: 'Art arda 3 oyun kazan', target: 3 },
+  { id: 'play_10', title: '10 Oyun Oyna', description: 'Bugün 10 oyun oyna', target: 10 },
+  { id: 'tricks_50', title: '50 El Al', description: 'Bugün 50 el al', target: 50 },
+  { id: 'perfect_game', title: 'Mükemmel Oyun', description: 'Bir oyunda tüm elleri al', target: 1 },
+];
+
+export const generateDailyChallenge = (modesPlayed?: string[]): DailyChallenge => {
+  const modes = [GameMode.IHALELI, GameMode.IHALESIZ, GameMode.KOZ_MACA, GameMode.ESLI];
+  const randomMode = modes[Math.floor(Math.random() * modes.length)];
+  const template = CHALLENGE_TEMPLATES[Math.floor(Math.random() * CHALLENGE_TEMPLATES.length)];
+  
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  
+  return {
+    id: `daily_${Date.now()}`,
+    title: template.title.replace('{mode}', randomMode),
+    description: template.description.replace('{mode}', randomMode),
+    mode: template.id === 'win_with_mode' ? randomMode : undefined,
+    target: template.target,
+    progress: 0,
+    reward: COINS_REWARDS.DAILY_CHALLENGE,
+    completed: false,
+    expiresAt: tomorrow.toISOString(),
+  };
+};
+
+export const shouldResetDailyChallenge = (profile: UserProfile): boolean => {
+  if (!profile.dailyChallenge) return true;
+  const expires = new Date(profile.dailyChallenge.expiresAt);
+  return new Date() >= expires;
+};
+
+export const resetDailyChallenge = (profile: UserProfile): UserProfile => {
+  if (!shouldResetDailyChallenge(profile)) return profile;
+  
+  return {
+    ...profile,
+    dailyChallenge: generateDailyChallenge(),
+  };
+};
+
+// --- POWER-UPS ---
+export const purchasePowerUp = (
+  profile: UserProfile, 
+  powerUpId: string
+): { newProfile: UserProfile; success: boolean } => {
+  const powerUp = POWER_UPS.find(p => p.id === powerUpId);
+  if (!powerUp || profile.coins < powerUp.price) {
+    return { newProfile: profile, success: false };
+  }
+  
+  // Mevcut power-up'ları güncelle
+  let ownedPowerUps = [...(profile.ownedPowerUps || [])];
+  const existingIdx = ownedPowerUps.findIndex(p => p.id === powerUpId);
+  
+  if (existingIdx >= 0) {
+    ownedPowerUps[existingIdx] = {
+      ...ownedPowerUps[existingIdx],
+      owned: ownedPowerUps[existingIdx].owned + 1,
+    };
+  } else {
+    ownedPowerUps.push({ ...powerUp, owned: 1 });
+  }
+  
+  // Özel power-up sayaçlarını güncelle
+  let updated = {
+    ...profile,
+    coins: profile.coins - powerUp.price,
+    totalCoinsSpent: profile.totalCoinsSpent + powerUp.price,
+    ownedPowerUps,
+  };
+  
+  if (powerUpId === 'undo') {
+    updated.undoCount = (profile.undoCount || 0) + 1;
+  } else if (powerUpId === 'hint') {
+    updated.hintCount = (profile.hintCount || 0) + 1;
+  } else if (powerUpId === 'streak_protection') {
+    updated.streakProtectionCount = (profile.streakProtectionCount || 0) + 1;
+  }
+  
+  return { newProfile: updated, success: true };
+};
+
+export const usePowerUp = (
+  profile: UserProfile,
+  powerUpId: string
+): { newProfile: UserProfile; success: boolean } => {
+  let countField: 'undoCount' | 'hintCount' | 'streakProtectionCount';
+  
+  switch (powerUpId) {
+    case 'undo':
+      countField = 'undoCount';
+      break;
+    case 'hint':
+      countField = 'hintCount';
+      break;
+    case 'streak_protection':
+      countField = 'streakProtectionCount';
+      break;
+    default:
+      return { newProfile: profile, success: false };
+  }
+  
+  const count = profile[countField] || 0;
+  if (count <= 0) {
+    return { newProfile: profile, success: false };
+  }
+  
+  return {
+    newProfile: {
+      ...profile,
+      [countField]: count - 1,
+    },
+    success: true,
   };
 };
 
@@ -399,7 +588,7 @@ export const getAllAchievements = (): Achievement[] => {
       reward: 2000,
       unlocked: false,
       progress: 0,
-      target: 7, // Tüm modlar
+      target: 11, // Tüm modlar (güncellenmiş sayı)
     },
     {
       id: 'coins_10000',
@@ -522,8 +711,8 @@ export const checkAndUnlockAchievements = (
         break;
       case 'all_modes':
         if (stats.modesPlayed) {
-          newProgress = Math.min(stats.modesPlayed.length, 7);
-          shouldUnlock = newProgress >= 7;
+          newProgress = Math.min(stats.modesPlayed.length, 11);
+          shouldUnlock = newProgress >= 11;
         }
         break;
       case 'coins_10000':
@@ -618,3 +807,32 @@ export const purchaseTheme = (profile: UserProfile, themeId: string): { newProfi
   };
 };
 
+// --- GAME SPEED SHOP ---
+export const GAME_SPEED_PRICES: Record<string, number> = {
+  slow: 0,
+  normal: 0,
+  fast: 50,
+  turbo: 100,
+};
+
+export const purchaseGameSpeed = (profile: UserProfile, speed: string): { newProfile: UserProfile; success: boolean } => {
+  const ownedSpeeds = profile.ownedGameSpeeds || ['slow', 'normal'];
+  if (ownedSpeeds.includes(speed)) {
+    return { newProfile: profile, success: false };
+  }
+
+  const price = GAME_SPEED_PRICES[speed] || 0;
+  if (profile.coins < price) {
+    return { newProfile: profile, success: false };
+  }
+
+  return {
+    newProfile: {
+      ...profile,
+      coins: profile.coins - price,
+      ownedGameSpeeds: [...ownedSpeeds, speed],
+      totalCoinsSpent: profile.totalCoinsSpent + price,
+    },
+    success: true,
+  };
+};

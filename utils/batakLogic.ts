@@ -63,12 +63,14 @@ export const isValidMove = (
   trickCount: number,
   rules: HouseRules
 ): boolean => {
+  // İlk elde koz yasağı
   if (rules.ilkElKozYasak && trickCount === 0 && card.suit === trumpSuit) {
       const otherCards = hand.filter(c => c.suit !== trumpSuit);
       if (otherCards.length > 0) return false;
   }
 
   if (currentTrick.length === 0) {
+    // Lider oyuncu - koz kırılmadan koz atılamaz
     if (trumpSuit && card.suit === trumpSuit && !spadesBroken) {
         const hasNonTrump = hand.some(c => c.suit !== trumpSuit);
         if (hasNonTrump) return false;
@@ -79,14 +81,72 @@ export const isValidMove = (
   const leadSuit = currentTrick[0].card.suit;
   const hasLeadSuit = hand.some(c => c.suit === leadSuit);
 
-  if (hasLeadSuit) return card.suit === leadSuit;
+  if (hasLeadSuit) {
+    // Aynı renkten atmak zorunlu
+    if (card.suit !== leadSuit) return false;
+    
+    // Zorunlu yükseltme kuralı
+    if (rules.zorunluYukseltme) {
+      const currentWinningCard = getCurrentWinningCard(currentTrick, trumpSuit);
+      if (currentWinningCard && currentWinningCard.card.suit === leadSuit) {
+        // Aynı renkten daha yüksek kart var mı?
+        const higherCards = hand.filter(c => 
+          c.suit === leadSuit && c.rank > currentWinningCard.card.rank
+        );
+        if (higherCards.length > 0) {
+          // Daha yüksek kart varsa, bu kartın yüksek olması lazım
+          return card.rank > currentWinningCard.card.rank;
+        }
+      }
+    }
+    
+    return true;
+  }
 
   if (trumpSuit) {
     const hasTrump = hand.some(c => c.suit === trumpSuit);
-    if (hasTrump) return card.suit === trumpSuit;
+    if (hasTrump) {
+      if (card.suit !== trumpSuit) return false;
+      
+      // Zorunlu yükseltme kuralı - koz için de
+      if (rules.zorunluYukseltme) {
+        const currentWinningCard = getCurrentWinningCard(currentTrick, trumpSuit);
+        if (currentWinningCard && currentWinningCard.card.suit === trumpSuit) {
+          const higherTrumps = hand.filter(c => 
+            c.suit === trumpSuit && c.rank > currentWinningCard.card.rank
+          );
+          if (higherTrumps.length > 0) {
+            return card.rank > currentWinningCard.card.rank;
+          }
+        }
+      }
+      
+      return true;
+    }
   }
 
   return true;
+};
+
+// Mevcut kazanan kartı bul
+export const getCurrentWinningCard = (trick: PlayedCard[], trumpSuit: Suit | null): PlayedCard | null => {
+  if (trick.length === 0) return null;
+  
+  let winningCard = trick[0];
+  const leadSuit = winningCard.card.suit;
+
+  for (let i = 1; i < trick.length; i++) {
+    const challenger = trick[i];
+    if (trumpSuit && challenger.card.suit === trumpSuit) {
+      if (winningCard.card.suit !== trumpSuit || challenger.card.rank > winningCard.card.rank) {
+        winningCard = challenger;
+      }
+    } else if (challenger.card.suit === leadSuit) {
+      if (trumpSuit && winningCard.card.suit === trumpSuit) continue;
+      if (challenger.card.rank > winningCard.card.rank) winningCard = challenger;
+    }
+  }
+  return winningCard;
 };
 
 export const determineTrickWinner = (trick: PlayedCard[], trumpSuit: Suit | null): number => {
@@ -321,11 +381,100 @@ export const calculateRoundScore = (
   players: Player[],
   gameMode: GameMode,
   rules: HouseRules,
-  totalTricks?: number // Hızlı oyun için
+  totalTricks?: number, // Hızlı oyun için
+  lastTrickWinnerId?: number // Bonus el için son eli kazanan
 ): { scores: number[], batakPlayers: number[], winnerId?: number } => {
   const maxTricks = totalTricks || 13;
   const scores: number[] = new Array(players.length).fill(0);
   const batakPlayers: number[] = [];
+  
+  // Bonus el kuralı - son eli kazanana +20 puan
+  const bonusElPoints = rules.bonusEl && lastTrickWinnerId !== undefined ? 20 : 0;
+  
+  if (gameMode === GameMode.CAPOT) {
+    // Capot: Hiç el almama hedefi (ters batak)
+    let winnerId = 0;
+    let minTricks = Infinity;
+    
+    players.forEach((player, idx) => {
+      // Capot'ta en az el alan kazanır
+      if (player.tricksWon === 0) {
+        scores[idx] = 130; // Hiç el almadı = maksimum puan
+      } else {
+        scores[idx] = Math.max(0, 130 - player.tricksWon * 10);
+      }
+      
+      if (player.tricksWon < minTricks) {
+        minTricks = player.tricksWon;
+        winnerId = idx;
+      }
+    });
+    
+    return { scores, batakPlayers, winnerId };
+  }
+  
+  if (gameMode === GameMode.YERE_BATAK || gameMode === GameMode.ACIK_KOZ) {
+    // Yere Batak ve Açık Koz: İhalesiz gibi çalışır, en çok el alan kazanır
+    let winnerId = 0;
+    let maxTricksWon = 0;
+    
+    players.forEach((player, idx) => {
+      let score = player.tricksWon * 10;
+      
+      // Bonus el
+      if (rules.bonusEl && lastTrickWinnerId === idx) {
+        score += bonusElPoints;
+      }
+      
+      scores[idx] = score;
+      if (player.tricksWon > maxTricksWon) {
+        maxTricksWon = player.tricksWon;
+        winnerId = idx;
+      }
+    });
+    
+    return { scores, batakPlayers, winnerId };
+  }
+  
+  if (gameMode === GameMode.KUMANDA) {
+    // Kumanda Batak: Turnuva formatı - ihaleli gibi ama daha sert kurallar
+    let winnerId = 0;
+    let maxScore = -Infinity;
+    
+    players.forEach((player, idx) => {
+      if (player.currentBid === 0) {
+        scores[idx] = -50; // Kumanda'da pas geçmek cezalı
+        return;
+      }
+      
+      if (player.tricksWon < player.currentBid) {
+        // Batak - Kumanda'da 2x ceza
+        let penalty = -player.currentBid * 20;
+        scores[idx] = Math.floor(penalty);
+        batakPlayers.push(idx);
+      } else {
+        // Başarılı
+        let score = player.currentBid * 10;
+        // Fazla el bonusu
+        const extraTricks = player.tricksWon - player.currentBid;
+        score += extraTricks * 5;
+        
+        // Bonus el
+        if (rules.bonusEl && lastTrickWinnerId === idx) {
+          score += bonusElPoints;
+        }
+        
+        scores[idx] = score;
+      }
+      
+      if (scores[idx] > maxScore) {
+        maxScore = scores[idx];
+        winnerId = idx;
+      }
+    });
+    
+    return { scores, batakPlayers, winnerId };
+  }
   
   if (gameMode === GameMode.ESLI) {
     // Eşli Batak: Takım 0-2 vs 1-3
