@@ -14,6 +14,19 @@ import {
   purchasePowerUp, usePowerUp, POWER_UPS,
   purchaseGameSpeed, GAME_SPEED_PRICES
 } from './utils/coinsSystem';
+import { 
+  BOT_PERSONALITIES, getThreeUniqueBotPersonalities, getBotQuote as getAdvancedBotQuote,
+  BotPersonality
+} from './utils/botPersonalities';
+import { PATTERNS, THEME_PATTERNS, getPatternCSS } from './utils/patterns';
+import { 
+  loadLeaderboard, updateLeaderboard, populateWithBots, getTopPlayers,
+  Leaderboard, LeaderboardEntry 
+} from './utils/leaderboard';
+import {
+  generateGuessGame, checkGuess, generateWeeklyQuiz, answerQuizQuestion,
+  isGuessGameExpired, isQuizExpired, GuessGame, Quiz
+} from './utils/miniGames';
 
 // --- AUDIO HELPERS ---
 const SOUND_PACKS: Record<SoundPack, { deal: string; play: string }> = {
@@ -152,6 +165,22 @@ const AppContent: React.FC = () => {
   const [lastPlayedCard, setLastPlayedCard] = useState<{ playerId: number; card: Card } | null>(null);
   const [canUndo, setCanUndo] = useState<boolean>(false);
   const [hintCard, setHintCard] = useState<Card | null>(null);
+  
+  // Bot kişilikleri
+  const [botPersonalities, setBotPersonalities] = useState<{ personality: BotPersonality; name: string }[]>([]);
+  
+  // Liderlik tablosu
+  const [leaderboard, setLeaderboard] = useState<Leaderboard>(() => {
+    const lb = loadLeaderboard();
+    return populateWithBots(lb);
+  });
+  const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
+  
+  // Mini oyunlar
+  const [guessGame, setGuessGame] = useState<GuessGame | null>(null);
+  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [showGuessGame, setShowGuessGame] = useState<boolean>(false);
+  const [showQuiz, setShowQuiz] = useState<boolean>(false);
 
   const [gameSettings, setGameSettings] = useState<GameSettings>({
     difficulty: Difficulty.MEDIUM,
@@ -339,7 +368,29 @@ const AppContent: React.FC = () => {
   };
 
   const triggerBotMessage = (playerId: number, type: 'win' | 'lose' | 'bid' | 'play') => {
-    const msg = getBotQuote(type);
+    // Gelişmiş bot kişilik sistemi kullan
+    const botData = botPersonalities[playerId - 1];
+    let msg: string;
+    
+    if (botData) {
+      // Bağlama duyarlı cümle al
+      const player = players[playerId];
+      const isWinning = player && player.tricksWon > (trickCount / 2);
+      
+      const quoteType = type === 'win' ? 'trickWin' : 
+                        type === 'lose' ? 'trickLose' : 
+                        type === 'bid' ? 'bidHigh' : 'playFirst';
+      
+      msg = getAdvancedBotQuote(botData.personality, quoteType, {
+        isWinning,
+        tricksWon: player?.tricksWon || 0,
+        trickCount,
+      });
+    } else {
+      // Fallback - eski sistem
+      msg = getBotQuote(type);
+    }
+    
     setBotMessages(prev => ({...prev, [playerId]: msg}));
     setTimeout(() => {
       setBotMessages(prev => ({...prev, [playerId]: null}));
@@ -347,6 +398,9 @@ const AppContent: React.FC = () => {
   };
 
   const getThemeStyles = (theme: GameTheme) => {
+    // Lokal SVG pattern'leri kullan (internetsiz çalışır)
+    const patternStyle = `bg-[${getPatternCSS(theme)}]`;
+    
     switch (theme) {
       case 'kiraathane': return { 
           bg: 'bg-emerald-950', 
@@ -355,12 +409,19 @@ const AppContent: React.FC = () => {
           name: 'Kıraathane HD',
           isHD: true 
       };
-      case 'casino': return { bg: 'bg-[#0f172a]', pattern: "bg-[url('https://www.transparenttextures.com/patterns/felt.png')]", accent: '#10b981', name: 'Casino' };
-      case 'wood': return { bg: 'bg-[#451a03]', pattern: "bg-[url('https://www.transparenttextures.com/patterns/dark-wood.png')]", accent: '#fbbf24', name: 'Ahşap' };
-      case 'royal': return { bg: 'bg-[#7f1d1d]', pattern: "bg-[url('https://www.transparenttextures.com/patterns/velvet.png')]", accent: '#f87171', name: 'Saray' };
-      case 'midnight': return { bg: 'bg-[#020617]', pattern: "bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]", accent: '#60a5fa', name: 'Gece' };
-      case 'vintage': return { bg: 'bg-[#44403c]', pattern: "bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')]", accent: '#a8a29e', name: 'Vintage' };
-      default: return { bg: 'bg-[#064e3b]', pattern: "bg-[url('https://www.transparenttextures.com/patterns/felt.png')]", accent: '#10b981', name: 'Klasik' };
+      case 'casino': return { bg: 'bg-[#0f172a]', pattern: patternStyle, accent: '#10b981', name: 'Casino' };
+      case 'wood': return { bg: 'bg-[#451a03]', pattern: patternStyle, accent: '#fbbf24', name: 'Ahşap' };
+      case 'royal': return { bg: 'bg-[#7f1d1d]', pattern: patternStyle, accent: '#f87171', name: 'Saray' };
+      case 'midnight': return { bg: 'bg-[#020617]', pattern: patternStyle, accent: '#60a5fa', name: 'Gece' };
+      case 'vintage': return { bg: 'bg-[#44403c]', pattern: patternStyle, accent: '#a8a29e', name: 'Vintage' };
+      case 'forest': return { bg: 'bg-[#14532d]', pattern: patternStyle, accent: '#22c55e', name: 'Orman' };
+      case 'ocean': return { bg: 'bg-[#0c4a6e]', pattern: patternStyle, accent: '#0ea5e9', name: 'Okyanus' };
+      case 'lava': return { bg: 'bg-[#7f1d1d]', pattern: patternStyle, accent: '#ef4444', name: 'Lav' };
+      case 'sunset': return { bg: 'bg-[#7c2d12]', pattern: patternStyle, accent: '#f97316', name: 'Gün Batımı' };
+      case 'space': return { bg: 'bg-[#030712]', pattern: patternStyle, accent: '#a855f7', name: 'Uzay' };
+      case 'desert': return { bg: 'bg-[#78350f]', pattern: patternStyle, accent: '#fbbf24', name: 'Çöl' };
+      case 'neon': return { bg: 'bg-[#0f172a]', pattern: patternStyle, accent: '#22d3ee', name: 'Neon' };
+      default: return { bg: 'bg-[#064e3b]', pattern: patternStyle, accent: '#10b981', name: 'Klasik' };
     }
   };
 
@@ -381,7 +442,10 @@ const AppContent: React.FC = () => {
     }
     
     const hands = dealCards(deck, playerCount);
-    const botNames = getThreeUniqueBotNames();
+    
+    // Gelişmiş bot kişilikleri
+    const botPersonalitiesData = getThreeUniqueBotPersonalities();
+    setBotPersonalities(botPersonalitiesData);
     
     const newPlayers: Player[] = [];
     for (let i = 0; i < playerCount; i++) {
@@ -397,11 +461,14 @@ const AppContent: React.FC = () => {
           totalScore: 0
         });
       } else {
+        const botData = botPersonalitiesData[i - 1];
         newPlayers.push({
           id: i,
-          name: botNames[i - 1],
+          name: botData?.name || `Bot ${i}`,
           isBot: true,
           hand: hands[i],
+          personality: botData?.personality.style === 'aggressive' ? 'AGGRESSIVE' : 
+                       botData?.personality.style === 'cautious' ? 'CAUTIOUS' : 'BALANCED',
           tricksWon: 0,
           currentBid: 0,
           position: positions[i],
@@ -1119,11 +1186,11 @@ const AppContent: React.FC = () => {
         </div>
       )}
       
-      {/* Power-Up'lar */}
-      <div className="w-full max-w-lg mb-4 flex gap-2">
+      {/* Power-Up'lar ve Mini Oyunlar */}
+      <div className="w-full max-w-lg mb-4 grid grid-cols-2 gap-2">
         <button 
           onClick={() => setShowPowerUps(true)}
-          className="flex-1 bg-white/5 border border-white/10 text-white font-bold py-2 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
+          className="bg-white/5 border border-white/10 text-white font-bold py-2 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
         >
           <Zap size={14} className="text-yellow-400" />
           POWER-UP'LAR
@@ -1132,6 +1199,43 @@ const AppContent: React.FC = () => {
               {userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount}
             </span>
           )}
+        </button>
+        <button 
+          onClick={() => setShowLeaderboard(true)}
+          className="bg-white/5 border border-white/10 text-white font-bold py-2 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
+        >
+          <Trophy size={14} className="text-yellow-400" />
+          LİDERLİK
+        </button>
+      </div>
+      
+      {/* Mini Oyunlar */}
+      <div className="w-full max-w-lg mb-4 grid grid-cols-2 gap-2">
+        <button 
+          onClick={() => {
+            if (!guessGame || isGuessGameExpired(guessGame)) {
+              setGuessGame(generateGuessGame());
+            }
+            setShowGuessGame(true);
+          }}
+          className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 text-white font-bold py-3 rounded-xl hover:from-purple-500/30 hover:to-pink-500/30 transition-all text-xs flex items-center justify-center gap-2"
+        >
+          <span className="text-lg">🎯</span>
+          TAHMİN ET
+          <span className="text-yellow-400 text-[10px]">+100🪙</span>
+        </button>
+        <button 
+          onClick={() => {
+            if (!quiz || isQuizExpired(quiz)) {
+              setQuiz(generateWeeklyQuiz());
+            }
+            setShowQuiz(true);
+          }}
+          className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/30 text-white font-bold py-3 rounded-xl hover:from-blue-500/30 hover:to-cyan-500/30 transition-all text-xs flex items-center justify-center gap-2"
+        >
+          <span className="text-lg">📝</span>
+          HAFTALIK QUIZ
+          <span className="text-yellow-400 text-[10px]">+250🪙</span>
         </button>
       </div>
       
@@ -1993,6 +2097,191 @@ const AppContent: React.FC = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Liderlik Tablosu Modal */}
+        {showLeaderboard && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto`}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-white italic">🏆 LİDERLİK</h2>
+                <button onClick={() => setShowLeaderboard(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+              </div>
+              
+              {/* Tabs */}
+              <div className="flex gap-2 mb-4">
+                {['daily', 'weekly', 'allTime'].map((period, idx) => (
+                  <button key={period} className={`flex-1 py-2 rounded-xl text-xs font-bold ${idx === 2 ? 'bg-emerald-500 text-white' : 'bg-white/5 text-white/60'}`}>
+                    {period === 'daily' ? 'GÜNLÜK' : period === 'weekly' ? 'HAFTALIK' : 'TÜM ZAMANLAR'}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Leaderboard List */}
+              <div className="space-y-2">
+                {getTopPlayers(leaderboard, 'allTime', 10).map((entry, idx) => (
+                  <div 
+                    key={entry.id}
+                    className={`flex items-center gap-3 p-3 rounded-xl ${idx < 3 ? 'bg-yellow-500/10 border border-yellow-400/30' : 'bg-white/5'}`}
+                  >
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black ${
+                      idx === 0 ? 'bg-yellow-400 text-black' :
+                      idx === 1 ? 'bg-gray-300 text-black' :
+                      idx === 2 ? 'bg-orange-400 text-black' :
+                      'bg-white/10 text-white/60'
+                    }`}>
+                      {idx + 1}
+                    </div>
+                    <div className="text-2xl">{entry.avatar}</div>
+                    <div className="flex-1">
+                      <div className="text-white font-bold text-sm">{entry.username}</div>
+                      <div className="text-white/40 text-[10px]">Lv.{entry.level} • {entry.wins} galibiyet</div>
+                    </div>
+                    <div className="text-yellow-400 font-black">{entry.score}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tahmin Et Mini Oyunu Modal */}
+        {showGuessGame && guessGame && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl`}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-white italic">🎯 TAHMİN ET</h2>
+                <button onClick={() => setShowGuessGame(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+              </div>
+              
+              {guessGame.played ? (
+                <div className="text-center py-8">
+                  {guessGame.correct ? (
+                    <>
+                      <div className="text-6xl mb-4">🎉</div>
+                      <div className="text-emerald-400 text-2xl font-black mb-2">DOĞRU!</div>
+                      <div className="text-yellow-400 font-bold">+{guessGame.reward} 🪙 kazandın!</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-6xl mb-4">😔</div>
+                      <div className="text-rose-400 text-2xl font-black mb-2">YANLIŞ!</div>
+                      <div className="text-white/60">Yarın tekrar dene!</div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="text-center mb-4">
+                    <div className="text-white/60 text-sm mb-2">Bu 4 karttan hangisi eli alır?</div>
+                    <div className="flex items-center justify-center gap-2 mb-4">
+                      <span className="text-white/60 text-xs">Koz:</span>
+                      <span className={`text-2xl ${guessGame.trumpSuit === '♥' || guessGame.trumpSuit === '♦' ? 'text-rose-500' : 'text-white'}`}>
+                        {guessGame.trumpSuit}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    {guessGame.cards.map((gc, idx) => (
+                      <button
+                        key={gc.card.id}
+                        onClick={() => {
+                          const correct = checkGuess(guessGame, gc.card.id);
+                          setGuessGame({ ...guessGame, played: true, correct });
+                          
+                          if (correct) {
+                            setUserProfile(prev => {
+                              const updated = {
+                                ...prev,
+                                coins: prev.coins + guessGame.reward,
+                                totalCoinsEarned: prev.totalCoinsEarned + guessGame.reward,
+                              };
+                              localStorage.setItem('batakProfile', JSON.stringify(updated));
+                              return updated;
+                            });
+                          }
+                        }}
+                        className={`p-6 rounded-2xl border-2 ${gc.isTrump ? 'border-yellow-400' : 'border-white/10'} bg-white/5 hover:bg-white/10 transition-all`}
+                      >
+                        <div className={`text-4xl font-bold ${gc.card.suit === '♥' || gc.card.suit === '♦' ? 'text-rose-500' : 'text-white'}`}>
+                          {gc.card.rank > 10 ? ['J', 'Q', 'K', 'A'][gc.card.rank - 11] : gc.card.rank}
+                          {gc.card.suit}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Quiz Modal */}
+        {showQuiz && quiz && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl`}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-white italic">📝 HAFTALIK QUIZ</h2>
+                <button onClick={() => setShowQuiz(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+              </div>
+              
+              {quiz.completed ? (
+                <div className="text-center py-8">
+                  <div className="text-6xl mb-4">🎓</div>
+                  <div className="text-white text-2xl font-black mb-2">Quiz Tamamlandı!</div>
+                  <div className="text-emerald-400 font-bold text-lg mb-2">{quiz.correctAnswers} / {quiz.questions.length} Doğru</div>
+                  <div className="text-yellow-400 font-bold">+{quiz.reward} 🪙 kazandın!</div>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4">
+                    <div className="flex justify-between text-white/60 text-xs mb-2">
+                      <span>Soru {quiz.currentQuestionIndex + 1} / {quiz.questions.length}</span>
+                      <span>{quiz.correctAnswers} doğru</span>
+                    </div>
+                    <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-400 rounded-full transition-all"
+                        style={{ width: `${((quiz.currentQuestionIndex) / quiz.questions.length) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="text-white font-bold text-lg mb-6">
+                    {quiz.questions[quiz.currentQuestionIndex].question}
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {quiz.questions[quiz.currentQuestionIndex].options.map((option, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          const result = answerQuizQuestion(quiz, idx);
+                          setQuiz(result.quiz);
+                          
+                          if (result.quiz.completed) {
+                            setUserProfile(prev => {
+                              const updated = {
+                                ...prev,
+                                coins: prev.coins + result.quiz.reward,
+                                totalCoinsEarned: prev.totalCoinsEarned + result.quiz.reward,
+                              };
+                              localStorage.setItem('batakProfile', JSON.stringify(updated));
+                              return updated;
+                            });
+                          }
+                        }}
+                        className="w-full p-4 rounded-xl bg-white/5 border border-white/10 text-white text-left hover:bg-white/10 transition-all"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
