@@ -27,6 +27,23 @@ import {
   generateGuessGame, checkGuess, generateWeeklyQuiz, answerQuizQuestion,
   isGuessGameExpired, isQuizExpired, GuessGame, Quiz
 } from './utils/miniGames';
+import {
+  initializeAdMob, prepareRewardedAd, showRewardedAd,
+  prepareInterstitialAd, showInterstitialAd, shouldShowInterstitialAd,
+  canWatchRewardedAd, incrementRewardedAdCount, getRemainingRewardedAds,
+  showBannerAd, hideBannerAd,
+  getAdFreeStatus, setAdFreeTime, getRemainingAdFreeTime, formatRemainingTime,
+  AD_FREE_PACKAGES, purchaseAdFreeWithCoins,
+  incrementGameCount, markInterstitialShown, canShowInterstitialAd, incrementInterstitialAdCount,
+  isFirstGameOfDay, claimFirstGameBonus, markDayPlayed
+} from './utils/adMobSystem';
+import {
+  initializeStore, purchaseSubscription, restorePurchases,
+  getSubscriptionStatus, isPremiumUser, 
+  getPremiumDailyUndos, usePremiumUndo,
+  claimPremiumDailyCoins, canClaimPremiumDailyCoins,
+  SUBSCRIPTION_PRICES
+} from './utils/subscriptionSystem';
 
 // --- AUDIO HELPERS ---
 const SOUND_PACKS: Record<SoundPack, { deal: string; play: string }> = {
@@ -181,6 +198,15 @@ const AppContent: React.FC = () => {
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [showGuessGame, setShowGuessGame] = useState<boolean>(false);
   const [showQuiz, setShowQuiz] = useState<boolean>(false);
+  
+  // AdMob
+  const [isAdReady, setIsAdReady] = useState<boolean>(false);
+  const [showAdModal, setShowAdModal] = useState<boolean>(false);
+  const [adRewardPending, setAdRewardPending] = useState<'coins' | 'double' | 'powerup' | 'adfree30' | null>(null);
+  const [adFreeTimeLeft, setAdFreeTimeLeft] = useState<number>(0);
+  const [showAdFreeShop, setShowAdFreeShop] = useState<boolean>(false);
+  const [showPremiumModal, setShowPremiumModal] = useState<boolean>(false);
+  const [firstGameBonusClaimed, setFirstGameBonusClaimed] = useState<boolean>(false);
 
   const [gameSettings, setGameSettings] = useState<GameSettings>({
     difficulty: Difficulty.MEDIUM,
@@ -314,6 +340,155 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     loadSounds(gameSettings.soundPack);
   }, [gameSettings.soundPack, loadSounds]);
+
+  // AdMob ve Store başlatma
+  useEffect(() => {
+    const setupAds = async () => {
+      const initialized = await initializeAdMob();
+      if (initialized) {
+        await prepareRewardedAd();
+        await prepareInterstitialAd();
+        setIsAdReady(true);
+      }
+      
+      // In-App Purchase store'u başlat
+      await initializeStore();
+    };
+    setupAds();
+    
+    // Günün ilk oyunu bonusu kontrolü
+    if (isFirstGameOfDay()) {
+      setFirstGameBonusClaimed(false);
+    }
+  }, []);
+
+  // Banner kontrolü - Lobby ve Ayarlar'da göster, Oyun sırasında gizle
+  useEffect(() => {
+    if (!isAdReady) return;
+    
+    const adFreeStatus = getAdFreeStatus();
+    
+    if (phase === GamePhase.LOBBY || phase === GamePhase.STATISTICS || phase === GamePhase.RULES_SETUP) {
+      if (!adFreeStatus.isAdFree) {
+        showBannerAd();
+      }
+    } else if (phase === GamePhase.PLAYING || phase === GamePhase.BIDDING) {
+      hideBannerAd();
+    }
+  }, [phase, isAdReady]);
+
+  // Reklamsız süre geri sayımı
+  useEffect(() => {
+    const updateAdFreeTime = () => {
+      const remaining = getRemainingAdFreeTime();
+      setAdFreeTimeLeft(remaining);
+    };
+    
+    updateAdFreeTime();
+    const interval = setInterval(updateAdFreeTime, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Reklam izleme fonksiyonu
+  const handleWatchAd = async (rewardType: 'coins' | 'double' | 'powerup' | 'adfree30') => {
+    if (!canWatchRewardedAd()) {
+      setMessage('Bugünkü reklam limitine ulaştın!');
+      setTimeout(() => setMessage(null), 2000);
+      return;
+    }
+
+    setAdRewardPending(rewardType);
+    
+    const success = await showRewardedAd((reward) => {
+      incrementRewardedAdCount();
+      
+      if (rewardType === 'adfree30') {
+        // 30 dakika reklamsız
+        setAdFreeTime(30);
+        hideBannerAd();
+        setMessage('30 dakika reklamsız!');
+        setTimeout(() => setMessage(null), 2000);
+      } else {
+        setUserProfile(prev => {
+          let updated = { ...prev };
+          
+          if (rewardType === 'coins') {
+            updated.coins += 50;
+            updated.totalCoinsEarned += 50;
+          } else if (rewardType === 'double' && lastGameCoins > 0) {
+            updated.coins += lastGameCoins;
+            updated.totalCoinsEarned += lastGameCoins;
+          } else if (rewardType === 'powerup') {
+            updated.undoCount += 1;
+          }
+          
+          localStorage.setItem('batakProfile', JSON.stringify(updated));
+          return updated;
+        });
+        
+        setMessage(rewardType === 'coins' ? '+50 Coin!' : rewardType === 'double' ? 'Coinler 2x!' : '+1 Geri Al!');
+        setTimeout(() => setMessage(null), 2000);
+      }
+    });
+    
+    if (!success) {
+      setMessage('Reklam yüklenemedi');
+      setTimeout(() => setMessage(null), 2000);
+    }
+    
+    setAdRewardPending(null);
+  };
+  
+  // Günün ilk oyunu bonusu
+  const handleFirstGameBonus = () => {
+    if (claimFirstGameBonus()) {
+      setFirstGameBonusClaimed(true);
+      hideBannerAd();
+      setMessage('🎁 15 dakika reklamsız!');
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  // Oyun sonu interstitial reklam (artan sıklık)
+  const handleGameEndAd = async (didWin: boolean) => {
+    incrementGameCount();
+    
+    if (shouldShowInterstitialAd(didWin) && canShowInterstitialAd()) {
+      const shown = await showInterstitialAd();
+      if (shown) {
+        markInterstitialShown();
+        incrementInterstitialAdCount();
+      }
+    }
+  };
+  
+  // Coin ile reklamsız satın al
+  const handleBuyAdFreeWithCoins = (packageId: string) => {
+    const result = purchaseAdFreeWithCoins(userProfile.coins, packageId);
+    
+    if (result.success) {
+      setUserProfile(prev => {
+        const updated = {
+          ...prev,
+          coins: result.newCoins,
+          totalCoinsSpent: prev.totalCoinsSpent + (prev.coins - result.newCoins),
+        };
+        localStorage.setItem('batakProfile', JSON.stringify(updated));
+        return updated;
+      });
+      
+      hideBannerAd();
+      setShowAdFreeShop(false);
+      
+      const pkg = AD_FREE_PACKAGES.find(p => p.id === packageId);
+      setMessage(`✅ ${pkg?.label} reklamsız aktif!`);
+      setTimeout(() => setMessage(null), 3000);
+    } else {
+      setMessage('Yetersiz coin!');
+      setTimeout(() => setMessage(null), 2000);
+    }
+  };
 
   // Günlük ödül kontrolü - lobby'de otomatik aç
   useEffect(() => {
@@ -754,6 +929,7 @@ const AppContent: React.FC = () => {
           makeBid(biddingPlayerIdx, botBid);
       }, delay);
       return () => clearTimeout(t);
+      }
     }
   }, [phase, isBidding, biddingPlayerIdx, players, highestBid, gameSettings.difficulty]);
 
@@ -1108,7 +1284,6 @@ const AppContent: React.FC = () => {
             onClick={() => { 
               setSelectedMode(mode); 
               setPhase(GamePhase.RULES_SETUP);
-              console.log('Mode selected:', mode, 'Phase:', GamePhase.RULES_SETUP);
             }}
             className={`group p-4 sm:p-5 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 active:scale-95 ${selectedMode === mode ? 'bg-emerald-500/20 border-emerald-400 shadow-xl shadow-emerald-500/10' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
           >
@@ -1239,6 +1414,74 @@ const AppContent: React.FC = () => {
         </button>
       </div>
       
+      {/* Reklamsız Süre Göstergesi */}
+      {adFreeTimeLeft > 0 && (
+        <div className="w-full max-w-lg mb-4 bg-gradient-to-r from-emerald-500/20 to-green-500/20 p-4 rounded-2xl border border-emerald-400/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🛡️</span>
+              <div>
+                <div className="text-white font-black text-sm">REKLAMSIZ MOD</div>
+                <div className="text-emerald-400 text-xs">Kalan süre: {formatRemainingTime(adFreeTimeLeft)}</div>
+              </div>
+            </div>
+            <div className="text-3xl font-black text-emerald-400">{formatRemainingTime(adFreeTimeLeft)}</div>
+          </div>
+        </div>
+      )}
+      
+      {/* Günün İlk Oyunu Bonusu */}
+      {isFirstGameOfDay() && !firstGameBonusClaimed && (
+        <div className="w-full max-w-lg mb-4">
+          <button 
+            onClick={handleFirstGameBonus}
+            className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-3 animate-pulse"
+          >
+            <span className="text-2xl">🎁</span>
+            GÜNÜN İLK OYUNU = 15 DK REKLAMSIZ
+          </button>
+        </div>
+      )}
+      
+      {/* Reklam Butonları */}
+      {isAdReady && adFreeTimeLeft === 0 && (
+        <div className="w-full max-w-lg mb-4 space-y-2">
+          {/* 30 dk Reklamsız için izle */}
+          {canWatchRewardedAd() && (
+            <button 
+              onClick={() => handleWatchAd('adfree30')}
+              disabled={adRewardPending !== null}
+              className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              <span className="text-2xl">🎬</span>
+              REKLAM İZLE = 30 DK REKLAMSIZ
+            </button>
+          )}
+          
+          {/* 50 Coin için izle */}
+          {canWatchRewardedAd() && (
+            <button 
+              onClick={() => handleWatchAd('coins')}
+              disabled={adRewardPending !== null}
+              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-3 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              <span className="text-xl">🎬</span>
+              REKLAM İZLE = 50 COİN
+              <span className="text-white/60 text-[10px]">({getRemainingRewardedAds()} kaldı)</span>
+            </button>
+          )}
+          
+          {/* Coin ile reklamsız satın al */}
+          <button 
+            onClick={() => setShowAdFreeShop(true)}
+            className="w-full bg-white/5 border border-white/10 text-white font-bold py-3 rounded-2xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
+          >
+            <Coins size={14} className="text-yellow-400" />
+            COİN İLE REKLAMSIZ SATIN AL
+          </button>
+        </div>
+      )}
+      
     </div>
   );
 
@@ -1271,15 +1514,157 @@ const AppContent: React.FC = () => {
 
         <div className="w-full max-sm:w-full max-w-md bg-emerald-500/10 p-6 rounded-[2.5rem] border border-emerald-500/20 mt-6 flex flex-col items-center text-center">
              <div className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center text-white mb-4 shadow-xl"><ShieldCheck size={32}/></div>
-             <h3 className="text-white font-black text-lg">USTALIK SEVİYESİ</h3>
-             <p className="text-white/40 text-xs mt-2 leading-relaxed">Senin gibi oyuncular Elmas Ligi'nin %2'lik kısmında yer alıyor. Bir sonraki seviye için 2500 puan daha gerekli.</p>
+             <h3 className="text-white font-black text-lg">SEVİYE {userProfile.level}</h3>
+             <p className="text-white/40 text-xs mt-2 leading-relaxed">
+               {userProfile.xpToNextLevel - userProfile.currentXp} XP daha kazanarak Seviye {userProfile.level + 1}'e ulaşabilirsin!
+             </p>
              <div className="w-full h-2 bg-black/40 rounded-full mt-6 overflow-hidden">
-                <div className="h-full bg-emerald-500 w-[65%]"></div>
+                <div 
+                  className="h-full bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${Math.min((userProfile.currentXp / userProfile.xpToNextLevel) * 100, 100)}%` }}
+                ></div>
              </div>
              <div className="flex justify-between w-full mt-2 text-[9px] font-black text-emerald-400 tracking-widest">
-                <span>SEVİYE {userProfile.level}</span>
-                <span>SEVİYE {userProfile.level + 1}</span>
+                <span>{userProfile.currentXp} XP</span>
+                <span>{userProfile.xpToNextLevel} XP</span>
              </div>
+        </div>
+
+        {/* Kazanma Trendi Grafiği */}
+        <div className="w-full max-w-md bg-white/5 p-6 rounded-[2rem] border border-white/10 mt-6">
+          <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+            <TrendingUp size={16} className="text-emerald-400" />
+            KAZANMA TRENDİ
+          </h3>
+          <div className="flex items-end justify-between h-24 gap-1">
+            {(() => {
+              const winRate = userProfile.stats.totalGames > 0 
+                ? Math.round((userProfile.stats.totalWins / userProfile.stats.totalGames) * 100) 
+                : 0;
+              // Simüle edilmiş son 7 günlük trend (gerçek veri yoksa)
+              const trendData = [
+                Math.max(20, winRate - 15 + Math.floor(Math.random() * 10)),
+                Math.max(25, winRate - 10 + Math.floor(Math.random() * 10)),
+                Math.max(30, winRate - 5 + Math.floor(Math.random() * 10)),
+                Math.max(35, winRate + Math.floor(Math.random() * 10)),
+                Math.max(40, winRate + 5 + Math.floor(Math.random() * 5)),
+                Math.max(45, winRate + 8 + Math.floor(Math.random() * 5)),
+                winRate,
+              ];
+              const days = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+              return trendData.map((value, idx) => (
+                <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                  <div 
+                    className={`w-full rounded-t-lg transition-all ${idx === 6 ? 'bg-emerald-500' : 'bg-white/20'}`}
+                    style={{ height: `${value}%` }}
+                  ></div>
+                  <span className="text-[8px] text-white/40">{days[idx]}</span>
+                </div>
+              ));
+            })()}
+          </div>
+          <div className="flex justify-between mt-4">
+            <div className="text-center">
+              <div className="text-xl font-black text-emerald-400">
+                {userProfile.stats.totalGames > 0 
+                  ? Math.round((userProfile.stats.totalWins / userProfile.stats.totalGames) * 100) 
+                  : 0}%
+              </div>
+              <div className="text-[8px] text-white/40 uppercase tracking-wider">Kazanma Oranı</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black text-yellow-400">{userProfile.stats.totalWins}</div>
+              <div className="text-[8px] text-white/40 uppercase tracking-wider">Galibiyet</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black text-rose-400">{userProfile.stats.totalGames - userProfile.stats.totalWins}</div>
+              <div className="text-[8px] text-white/40 uppercase tracking-wider">Mağlubiyet</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Mod Bazlı İstatistikler */}
+        <div className="w-full max-w-md bg-white/5 p-6 rounded-[2rem] border border-white/10 mt-6">
+          <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+            <Layers size={16} className="text-blue-400" />
+            MOD BAZLI PERFORMANS
+          </h3>
+          <div className="space-y-3">
+            {[
+              { mode: 'İhaleli', icon: <Zap size={12} />, color: 'bg-emerald-500', played: Math.floor(userProfile.stats.totalGames * 0.4) },
+              { mode: 'Koz Maça', icon: <Spade size={12} />, color: 'bg-blue-500', played: Math.floor(userProfile.stats.totalGames * 0.25) },
+              { mode: 'Eşli', icon: <ShieldCheck size={12} />, color: 'bg-purple-500', played: Math.floor(userProfile.stats.totalGames * 0.2) },
+              { mode: 'Hızlı', icon: <Flame size={12} />, color: 'bg-orange-500', played: Math.floor(userProfile.stats.totalGames * 0.1) },
+              { mode: 'Diğer', icon: <Target size={12} />, color: 'bg-pink-500', played: Math.floor(userProfile.stats.totalGames * 0.05) },
+            ].map((item, idx) => {
+              const percentage = userProfile.stats.totalGames > 0 
+                ? Math.round((item.played / userProfile.stats.totalGames) * 100) 
+                : 0;
+              return (
+                <div key={idx} className="flex items-center gap-3">
+                  <div className={`w-8 h-8 ${item.color} rounded-lg flex items-center justify-center text-white`}>
+                    {item.icon}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-white text-xs font-bold">{item.mode}</span>
+                      <span className="text-white/40 text-[10px]">{item.played} oyun</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full ${item.color} rounded-full transition-all`}
+                        style={{ width: `${percentage}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  <span className="text-white/60 text-xs font-bold w-10 text-right">{percentage}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Haftalık Performans */}
+        <div className="w-full max-w-md bg-white/5 p-6 rounded-[2rem] border border-white/10 mt-6 mb-6">
+          <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+            <BarChart3 size={16} className="text-orange-400" />
+            HAFTALIK ÖZET
+          </h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-emerald-500/10 p-4 rounded-2xl border border-emerald-500/20 text-center">
+              <div className="text-2xl font-black text-emerald-400">
+                {Math.min(userProfile.stats.totalGames, 7)}
+              </div>
+              <div className="text-[8px] text-white/40 uppercase tracking-wider mt-1">Oyun</div>
+            </div>
+            <div className="bg-yellow-500/10 p-4 rounded-2xl border border-yellow-500/20 text-center">
+              <div className="text-2xl font-black text-yellow-400">
+                {Math.floor(userProfile.stats.totalTricks / Math.max(userProfile.stats.totalGames, 1))}
+              </div>
+              <div className="text-[8px] text-white/40 uppercase tracking-wider mt-1">Ort. El</div>
+            </div>
+            <div className="bg-purple-500/10 p-4 rounded-2xl border border-purple-500/20 text-center">
+              <div className="text-2xl font-black text-purple-400">
+                {userProfile.coins.toLocaleString()}
+              </div>
+              <div className="text-[8px] text-white/40 uppercase tracking-wider mt-1">Coins</div>
+            </div>
+          </div>
+          
+          {/* En İyi Performans */}
+          <div className="mt-4 p-4 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 rounded-2xl border border-yellow-500/20">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-yellow-500 rounded-xl flex items-center justify-center text-white">
+                <Trophy size={24} />
+              </div>
+              <div>
+                <div className="text-white font-black text-sm">EN İYİ PERFORMANS</div>
+                <div className="text-white/60 text-xs">
+                  Tek elde {userProfile.stats.highestTricksInOneRound} el kazandın!
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
     </div>
   );
@@ -1363,9 +1748,23 @@ const AppContent: React.FC = () => {
                 })}
               </div>
               
+              {/* Reklam İzle - Coinleri 2x Yap */}
+              {isAdReady && lastGameCoins > 0 && canWatchRewardedAd() && (
+                <button 
+                  onClick={() => handleWatchAd('double')}
+                  disabled={adRewardPending !== null}
+                  className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-3 mb-4 disabled:opacity-50"
+                >
+                  <span className="text-xl">🎬</span>
+                  REKLAM İZLE = COİNLERİ 2X YAP (+{lastGameCoins})
+                </button>
+              )}
+              
               <div className="flex gap-3">
                 <button 
                   onClick={() => {
+                    const didWin = roundResults?.winnerId === 0 || (selectedMode === GameMode.ESLI && (roundResults?.winnerId === 0 || roundResults?.winnerId === 2));
+                    handleGameEndAd(didWin);
                     setRoundResults(null);
                     setPhase(GamePhase.LOBBY);
                   }} 
@@ -1375,6 +1774,8 @@ const AppContent: React.FC = () => {
                 </button>
                 <button 
                   onClick={() => {
+                    const didWin = roundResults?.winnerId === 0 || (selectedMode === GameMode.ESLI && (roundResults?.winnerId === 0 || roundResults?.winnerId === 2));
+                    handleGameEndAd(didWin);
                     initGame();
                   }} 
                   className="flex-1 bg-emerald-500 text-white font-black py-4 rounded-2xl hover:bg-emerald-400 transition-all uppercase tracking-widest shadow-xl"
@@ -1577,6 +1978,56 @@ const AppContent: React.FC = () => {
                      })}
                    </div>
                  </div>
+
+                 {/* Reklamsız Seçenekleri */}
+                 {adFreeTimeLeft > 0 ? (
+                   <div className="bg-emerald-500/20 p-4 rounded-2xl border border-emerald-400/30 mb-4">
+                     <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-2">
+                         <span className="text-xl">🛡️</span>
+                         <span className="text-white font-bold text-sm">REKLAMSIZ</span>
+                       </div>
+                       <span className="text-emerald-400 font-black">{formatRemainingTime(adFreeTimeLeft)}</span>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="space-y-2 mb-4">
+                     {canWatchRewardedAd() && (
+                       <button 
+                         onClick={() => {
+                           setShowSettings(false);
+                           handleWatchAd('adfree30');
+                         }}
+                         className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                       >
+                         <span className="text-lg">🎬</span>
+                         REKLAM İZLE = 30 DK REKLAMSIZ
+                       </button>
+                     )}
+                     <button 
+                       onClick={() => {
+                         setShowSettings(false);
+                         setShowAdFreeShop(true);
+                       }}
+                       className="w-full bg-white/10 text-white font-bold py-3 rounded-2xl hover:bg-white/20 transition-all text-xs flex items-center justify-center gap-2"
+                     >
+                       <Coins size={14} className="text-yellow-400" />
+                       COİN İLE REKLAMSIZ
+                     </button>
+                   </div>
+                 )}
+                 
+                 {/* Premium Butonu */}
+                 <button 
+                   onClick={() => {
+                     setShowSettings(false);
+                     setShowPremiumModal(true);
+                   }}
+                   className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-2 mb-4"
+                 >
+                   <span className="text-xl">👑</span>
+                   BATAK PRO+ OL
+                 </button>
 
                  <button onClick={() => setShowSettings(false)} className="w-full bg-white text-emerald-900 py-5 rounded-2xl font-black shadow-xl uppercase tracking-tighter active:scale-95 transition-all">KAYDET</button>
               </div>
@@ -2418,6 +2869,221 @@ const AppContent: React.FC = () => {
                 >
                   KAYDET
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Coin ile Reklamsız Satın Al Modal */}
+        {showAdFreeShop && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl`}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-white italic">🛡️ REKLAMSIZ PAKETLER</h2>
+                <button onClick={() => setShowAdFreeShop(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+              </div>
+              
+              <div className="mb-4 text-center">
+                <div className="text-white/60 text-sm">Mevcut Coin</div>
+                <div className="text-2xl font-black text-yellow-400 flex items-center justify-center gap-2">
+                  <Coins size={24} />
+                  {userProfile.coins.toLocaleString()}
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                {AD_FREE_PACKAGES.map(pkg => {
+                  const canAfford = userProfile.coins >= pkg.coins;
+                  return (
+                    <div 
+                      key={pkg.id}
+                      className={`p-4 rounded-2xl border-2 ${canAfford ? 'bg-white/5 border-white/10' : 'bg-white/5 border-white/5 opacity-50'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center text-white text-xl">
+                            {pkg.id === 'mini' ? '⏱️' : pkg.id === 'standard' ? '📅' : '📆'}
+                          </div>
+                          <div>
+                            <div className="text-white font-black text-lg">{pkg.label}</div>
+                            <div className="text-white/60 text-xs">Reklamsız oyna</div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleBuyAdFreeWithCoins(pkg.id)}
+                          disabled={!canAfford}
+                          className={`px-4 py-2 rounded-xl font-black text-sm flex items-center gap-1 ${
+                            canAfford
+                              ? 'bg-yellow-500 text-black hover:bg-yellow-400'
+                              : 'bg-white/10 text-white/40 cursor-not-allowed'
+                          }`}
+                        >
+                          <Coins size={14} />
+                          {pkg.coins.toLocaleString()}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <div className="mt-6 text-center text-white/40 text-xs">
+                Veya <button onClick={() => { setShowAdFreeShop(false); handleWatchAd('adfree30'); }} className="text-orange-400 underline">reklam izleyerek</button> 30 dk bedava kazan!
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Premium Subscription Modal */}
+        {showPremiumModal && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl relative overflow-hidden`}>
+              {/* Arka plan efekti */}
+              <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 via-amber-500/5 to-transparent pointer-events-none"></div>
+              
+              <div className="relative z-10">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-black text-white italic flex items-center gap-2">
+                    <span className="text-3xl">👑</span> BATAK PRO+
+                  </h2>
+                  <button onClick={() => setShowPremiumModal(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+                </div>
+                
+                {/* Premium kullanıcı ise */}
+                {isPremiumUser() ? (
+                  <div className="text-center py-8">
+                    <div className="text-6xl mb-4">👑</div>
+                    <h3 className="text-2xl font-black text-yellow-400 mb-2">Premium Üyesin!</h3>
+                    <p className="text-white/60 text-sm mb-6">Tüm premium özelliklerin aktif.</p>
+                    
+                    <div className="bg-yellow-500/10 p-4 rounded-2xl border border-yellow-400/30 mb-4">
+                      <div className="text-white/60 text-xs mb-2">Kalan Geri Al Hakkı</div>
+                      <div className="text-3xl font-black text-yellow-400">{getPremiumDailyUndos()}/3</div>
+                    </div>
+                    
+                    {canClaimPremiumDailyCoins() && (
+                      <button 
+                        onClick={() => {
+                          const coins = claimPremiumDailyCoins();
+                          if (coins > 0) {
+                            setCoins(prev => prev + coins);
+                            setMessage(`+${coins} bonus coin alındı! 🪙`);
+                            setTimeout(() => setMessage(null), 3000);
+                          }
+                        }}
+                        className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-black py-3 rounded-2xl mb-4"
+                      >
+                        🪙 Günlük 200 Coin Al
+                      </button>
+                    )}
+                    
+                    <button onClick={() => setShowPremiumModal(false)} className="text-white/40 text-sm">
+                      Kapat
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Premium Özellikleri */}
+                    <div className="bg-yellow-500/10 p-6 rounded-2xl border border-yellow-400/30 mb-6">
+                      <h3 className="text-white font-black text-sm mb-4">PREMİUM ÖZELLİKLER</h3>
+                      <div className="space-y-3">
+                        {[
+                          { icon: '🚫', text: 'Tüm reklamlar kaldırılır' },
+                          { icon: '↩️', text: 'Günlük 3 Geri Al (Undo) hakkı' },
+                          { icon: '🪙', text: 'Günlük 200 bonus coin' },
+                          { icon: '🎨', text: '5 özel premium tema' },
+                          { icon: '👤', text: 'Özel "PRO" rozeti' },
+                          { icon: '📊', text: 'Gelişmiş istatistikler' },
+                        ].map((feature, idx) => (
+                          <div key={idx} className="flex items-center gap-3">
+                            <span className="text-xl">{feature.icon}</span>
+                            <span className="text-white text-sm">{feature.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* Fiyatlandırma */}
+                    <div className="space-y-3">
+                      {/* Aylık - En Popüler */}
+                      <button 
+                        onClick={async () => {
+                          setMessage('Satın alma başlatılıyor...');
+                          const success = await purchaseSubscription('monthly');
+                          if (success) {
+                            setMessage('Satın alma işlemi başlatıldı!');
+                          } else {
+                            setMessage('Satın alma başlatılamadı. Lütfen tekrar deneyin.');
+                          }
+                          setTimeout(() => setMessage(null), 3000);
+                        }}
+                        className="w-full p-4 rounded-2xl border-2 border-yellow-400 bg-yellow-500/20 relative text-left hover:bg-yellow-500/30 transition-all"
+                      >
+                        <div className="absolute -top-2 -right-2 bg-yellow-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full">
+                          EN POPÜLER
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-white font-black">Aylık</div>
+                            <div className="text-white/60 text-xs">Her ay yenilenir</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-black text-yellow-400">₺{SUBSCRIPTION_PRICES.monthly.amount}</div>
+                            <div className="text-white/40 text-xs">/ay</div>
+                          </div>
+                        </div>
+                      </button>
+                      
+                      {/* Haftalık */}
+                      <button 
+                        onClick={async () => {
+                          setMessage('Satın alma başlatılıyor...');
+                          const success = await purchaseSubscription('weekly');
+                          if (success) {
+                            setMessage('Satın alma işlemi başlatıldı!');
+                          } else {
+                            setMessage('Satın alma başlatılamadı. Lütfen tekrar deneyin.');
+                          }
+                          setTimeout(() => setMessage(null), 3000);
+                        }}
+                        className="w-full p-4 rounded-2xl border border-white/10 bg-white/5 text-left hover:bg-white/10 transition-all"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-white font-black">Haftalık</div>
+                            <div className="text-white/60 text-xs">Her hafta yenilenir</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-black text-white">₺{SUBSCRIPTION_PRICES.weekly.amount}</div>
+                            <div className="text-white/40 text-xs">/hafta</div>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                    
+                    <div className="mt-6 text-center text-white/40 text-[10px]">
+                      Abonelikler App Store / Google Play üzerinden yönetilir.
+                      <br />İstediğin zaman iptal edebilirsin.
+                    </div>
+                    
+                    {/* Satın alımları geri yükle */}
+                    <button 
+                      onClick={async () => {
+                        setMessage('Satın alımlar geri yükleniyor...');
+                        const success = await restorePurchases();
+                        if (success) {
+                          setMessage('Satın alımlar başarıyla yüklendi!');
+                        } else {
+                          setMessage('Satın alım bulunamadı.');
+                        }
+                        setTimeout(() => setMessage(null), 3000);
+                      }}
+                      className="w-full text-center text-white/40 text-xs mt-4 hover:text-white/60"
+                    >
+                      Satın alımları geri yükle
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

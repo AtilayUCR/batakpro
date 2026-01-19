@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "639027998572",
+    "project_id": "batak-pro-72561",
+    "storage_bucket": "batak-pro-72561.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:639027998572:android:4b3225e8e97be96a218d49",
+        "android_client_info": {
+          "package_name": "utilitypro.batakpro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmXkrkGtRJqphG3JpQosOSK8qlfangtf4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
