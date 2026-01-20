@@ -48,7 +48,11 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	
-	<!-- AdMob App ID (TEST - Production'da değiştir!) -->
+	<!-- App Tracking Transparency - Reklam izleme izni -->
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Bu uygulama, size daha alakalı reklamlar göstermek için izleme verilerini kullanır. İzin verirseniz daha iyi bir deneyim sunabiliriz.</string>
+	
+	<!-- AdMob App ID (Production - Değiştirilecek) -->
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-3940256099942544~1458002511</string>
 	

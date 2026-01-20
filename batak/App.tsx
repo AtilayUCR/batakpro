@@ -44,6 +44,12 @@ import {
   claimPremiumDailyCoins, canClaimPremiumDailyCoins,
   SUBSCRIPTION_PRICES
 } from './utils/subscriptionSystem';
+import {
+  initializeAnalytics, logGameStart, logGameEnd, logGameModePlay,
+  logRewardedAdWatched, logInterstitialShown, logDailyRewardClaimed,
+  logLevelUp, logOnboardingCompleted, logTrumpSelected, logCoinEarned,
+  logCoinSpent, logSettingChanged, logScreenView, setUserProperties
+} from './utils/analyticsSystem';
 
 // --- AUDIO HELPERS ---
 const SOUND_PACKS: Record<SoundPack, { deal: string; play: string }> = {
@@ -202,6 +208,7 @@ const AppContent: React.FC = () => {
   const [currentPlayerIdx, setCurrentPlayerIdx] = useState<number>(0);
   const [currentTrick, setCurrentTrick] = useState<PlayedCard[]>([]);
   const [visualTrick, setVisualTrick] = useState<PlayedCard[]>([]);
+  const [gameStartTime, setGameStartTime] = useState<number | null>(null);
   const [trumpSuit, setTrumpSuit] = useState<Suit | null>(null);
   const [spadesBroken, setSpadesBroken] = useState<boolean>(false);
   const [trickCount, setTrickCount] = useState<number>(0);
@@ -419,9 +426,13 @@ const AppContent: React.FC = () => {
     loadSounds(gameSettings.soundPack);
   }, [gameSettings.soundPack, loadSounds]);
 
-  // AdMob ve Store başlatma
+  // AdMob, Analytics ve Store başlatma
   useEffect(() => {
     const setupAds = async () => {
+      // Firebase Analytics başlat
+      await initializeAnalytics();
+      
+      // AdMob başlat (iOS'ta ATT izni de istenir)
       const initialized = await initializeAdMob();
       if (initialized) {
         await prepareRewardedAd();
@@ -431,6 +442,13 @@ const AppContent: React.FC = () => {
       
       // In-App Purchase store'u başlat
       await initializeStore();
+      
+      // User properties güncelle
+      setUserProperties({
+        level: userProfile.level,
+        totalGames: userProfile.gamesPlayed,
+        isPremium: isPremiumUser(),
+      });
     };
     setupAds();
     
@@ -480,6 +498,15 @@ const AppContent: React.FC = () => {
     const success = await showRewardedAd((reward) => {
       incrementRewardedAdCount();
       
+      // Analytics: Rewarded ad izlendi
+      const analyticsRewardType = rewardType === 'coins' ? 'coins100' : 
+                                  rewardType === 'double' ? 'double' : 
+                                  rewardType === 'adfree30' ? 'adfree30' : 'coins100';
+      logRewardedAdWatched({ 
+        rewardType: analyticsRewardType as 'adfree30' | 'coins100' | 'coins200' | 'double',
+        coinsEarned: rewardType === 'coins' ? 50 : rewardType === 'double' ? lastGameCoins : 0
+      });
+      
       if (rewardType === 'adfree30') {
         // 30 dakika reklamsız
         setAdFreeTime(30);
@@ -493,9 +520,11 @@ const AppContent: React.FC = () => {
           if (rewardType === 'coins') {
             updated.coins += 50;
             updated.totalCoinsEarned += 50;
+            logCoinEarned({ amount: 50, source: 'rewarded_ad' });
           } else if (rewardType === 'double' && lastGameCoins > 0) {
             updated.coins += lastGameCoins;
             updated.totalCoinsEarned += lastGameCoins;
+            logCoinEarned({ amount: lastGameCoins, source: 'rewarded_ad' });
           } else if (rewardType === 'powerup') {
             updated.undoCount += 1;
           }
@@ -527,15 +556,27 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // Oyun sonu interstitial reklam (artan sıklık)
-  const handleGameEndAd = async (didWin: boolean) => {
+  // Oyun sonu interstitial reklam (artan sıklık) ve analytics
+  const handleGameEndAd = async (didWin: boolean, coinsEarned: number = 0) => {
     incrementGameCount();
     
+    // Analytics: Oyun sonu event'i
+    logGameEnd({
+      mode: selectedMode,
+      result: didWin ? 'win' : 'lose',
+      coinsEarned: coinsEarned,
+      durationSeconds: Math.floor((Date.now() - (gameStartTime || Date.now())) / 1000),
+      tricksWon: players[0]?.tricksWon || 0,
+      bid: highestBid,
+    });
+    
+    // Interstitial reklam
     if (shouldShowInterstitialAd(didWin) && canShowInterstitialAd()) {
       const shown = await showInterstitialAd();
       if (shown) {
         markInterstitialShown();
         incrementInterstitialAdCount();
+        logInterstitialShown(incrementGameCount.length || 0);
       }
     }
   };
@@ -758,6 +799,10 @@ const AppContent: React.FC = () => {
     playSfx('deal');
     const deck = shuffleDeck(createDeck());
     
+    // Analytics: Oyun başlangıç zamanı ve mod tracking
+    setGameStartTime(Date.now());
+    logGameModePlay(selectedMode);
+    
     // Moda göre oyuncu sayısı belirle
     let playerCount = 4;
     let positions: Array<'bottom' | 'left' | 'top' | 'right'> = ['bottom', 'left', 'top', 'right'];
@@ -845,19 +890,23 @@ const AppContent: React.FC = () => {
       setTrumpSuit(null);
       setIsBidding(false);
       setPhase(GamePhase.PLAYING);
+      logGameStart({ mode: selectedMode, difficulty: gameSettings.difficulty });
     } else if (spadeTrumpModes.includes(selectedMode)) {
       setTrumpSuit(Suit.SPADES);
       setIsBidding(false);
       setPhase(GamePhase.PLAYING);
+      logGameStart({ mode: selectedMode, difficulty: gameSettings.difficulty, trumpSuit: Suit.SPADES });
     } else if (selectedMode === GameMode.CAPOT) {
       // Capot: Koz yok veya rastgele
       setTrumpSuit(null);
       setIsBidding(false);
       setPhase(GamePhase.PLAYING);
+      logGameStart({ mode: selectedMode, difficulty: gameSettings.difficulty });
     } else {
       setTrumpSuit(Suit.SPADES);
       setIsBidding(false);
       setPhase(GamePhase.PLAYING);
+      logGameStart({ mode: selectedMode, difficulty: gameSettings.difficulty, trumpSuit: Suit.SPADES });
     }
   };
 
@@ -1176,6 +1225,14 @@ const AppContent: React.FC = () => {
     if (bidWinnerId !== null) {
       setCurrentPlayerIdx(bidWinnerId);
     }
+    
+    // Analytics: Koz seçimi ve oyun başlangıcı
+    logTrumpSelected(suit, selectedMode);
+    logGameStart({
+      mode: selectedMode,
+      difficulty: gameSettings.difficulty,
+      trumpSuit: suit
+    });
   };
 
   const endRound = () => {
@@ -2726,6 +2783,12 @@ const AppContent: React.FC = () => {
                         const result = claimDailyReward(userProfile);
                         if (result.coinsEarned > 0) {
                           setUserProfile(result.newProfile);
+                          // Analytics: Günlük ödül alındı
+                          logDailyRewardClaimed({
+                            streakDay: getCurrentStreakDay(userProfile) || 1,
+                            rewardCoins: result.coinsEarned
+                          });
+                          logCoinEarned({ amount: result.coinsEarned, source: 'daily_reward' });
                           setTimeout(() => setShowDailyReward(false), 2000);
                         }
                       }}
@@ -3525,7 +3588,7 @@ const AppContent: React.FC = () => {
               
               {onboardingStep === 1 && (
                 <div className="animate-fade-in">
-                  <h2 className="text-2xl font-black text-white text-center mb-6">İsmini Seç</h2>
+                  <h2 className="text-2xl font-black text-white text-center mb-6">İsmini Gir</h2>
                   <input
                     type="text"
                     value={onboardingName}
@@ -3535,56 +3598,25 @@ const AppContent: React.FC = () => {
                     maxLength={12}
                   />
                   <button 
-                    onClick={() => onboardingName.trim() && setOnboardingStep(2)}
-                    disabled={!onboardingName.trim()}
-                    className={`w-full font-black py-4 rounded-2xl text-lg transition-all shadow-xl ${
-                      onboardingName.trim() 
-                        ? 'bg-emerald-500 text-white hover:bg-emerald-400' 
-                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    DEVAM
-                  </button>
-                </div>
-              )}
-              
-              {onboardingStep === 2 && (
-                <div className="animate-fade-in">
-                  <h2 className="text-2xl font-black text-white text-center mb-6">Avatar Seç</h2>
-                  <div className="grid grid-cols-4 gap-3 mb-6">
-                    {AVATAR_OPTIONS.map(({ id, icon }) => (
-                      <button
-                        key={id}
-                        onClick={() => setOnboardingAvatar(id)}
-                        className={`aspect-square rounded-2xl text-3xl flex items-center justify-center border-2 transition-all ${
-                          onboardingAvatar === id 
-                            ? 'bg-emerald-500 border-emerald-300 scale-110 shadow-xl' 
-                            : 'bg-black/30 border-white/10 hover:border-white/30'
-                        }`}
-                      >
-                        {icon}
-                      </button>
-                    ))}
-                  </div>
-                  <button 
                     onClick={() => {
-                      if (onboardingAvatar) {
+                      if (onboardingName.trim()) {
                         setUserProfile(p => {
                           const updated = {
                             ...p,
                             username: onboardingName.trim() || 'OYUNCU',
-                            avatarId: onboardingAvatar,
+                            avatarId: 'spade', // Varsayılan avatar
                             isOnboarded: true,
                           };
                           localStorage.setItem('batakProfile', JSON.stringify(updated));
+                          logOnboardingCompleted();
                           return updated;
                         });
                         setShowOnboarding(false);
                       }
                     }}
-                    disabled={!onboardingAvatar}
+                    disabled={!onboardingName.trim()}
                     className={`w-full font-black py-4 rounded-2xl text-lg transition-all shadow-xl ${
-                      onboardingAvatar 
+                      onboardingName.trim() 
                         ? 'bg-emerald-500 text-white hover:bg-emerald-400' 
                         : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     }`}

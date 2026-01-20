@@ -10,6 +10,14 @@ import {
   AdMobBannerSize
 } from '@capacitor-community/admob';
 
+// TrackingAuthorizationStatus - iOS ATT için
+enum TrackingAuthorizationStatus {
+  notDetermined = 0,
+  restricted = 1,
+  denied = 2,
+  authorized = 3,
+}
+
 // ============================================
 // AD UNIT ID'LERİ
 // ============================================
@@ -110,6 +118,42 @@ export const purchaseAdFreeWithCoins = (
 };
 
 // ============================================
+// ATT (App Tracking Transparency) - iOS 14.5+
+// ============================================
+export const requestTrackingAuthorization = async (): Promise<boolean> => {
+  const platform = getPlatform();
+  
+  // Sadece iOS'ta gerekli
+  if (platform !== 'ios') {
+    return true;
+  }
+  
+  try {
+    const status = await AdMob.trackingAuthorizationStatus();
+    
+    // Zaten izin verilmiş
+    if (status.status === TrackingAuthorizationStatus.authorized) {
+      console.log('Tracking already authorized');
+      return true;
+    }
+    
+    // Henüz sorulmamış - izin iste
+    if (status.status === TrackingAuthorizationStatus.notDetermined) {
+      const result = await AdMob.requestTrackingAuthorization();
+      console.log('Tracking authorization result:', result.status);
+      return result.status === TrackingAuthorizationStatus.authorized;
+    }
+    
+    // Reddedilmiş veya kısıtlı - yine de reklam göster (non-personalized)
+    console.log('Tracking not authorized, will show non-personalized ads');
+    return false;
+  } catch (error) {
+    console.error('Failed to request tracking authorization:', error);
+    return false;
+  }
+};
+
+// ============================================
 // ADMOB BAŞLATMA
 // ============================================
 let isInitialized = false;
@@ -119,6 +163,12 @@ export const initializeAdMob = async (): Promise<boolean> => {
   
   try {
     const platform = getPlatform();
+    
+    // iOS'ta önce ATT izni iste
+    if (platform === 'ios') {
+      await requestTrackingAuthorization();
+    }
+    
     await AdMob.initialize({
       // iOS = production, Android = test (henüz ID yok)
       initializeForTesting: platform === 'android',
