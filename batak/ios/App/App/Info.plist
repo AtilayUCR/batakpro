@@ -52,9 +52,15 @@
 	<key>NSUserTrackingUsageDescription</key>
 	<string>Bu uygulama, size daha alakalı reklamlar göstermek için izleme verilerini kullanır. İzin verirseniz daha iyi bir deneyim sunabiliriz.</string>
 	
-	<!-- AdMob App ID (Production - Değiştirilecek) -->
+	<!-- Push Notifications - Arka plan bildirimleri -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	
+	<!-- AdMob App ID - PRODUCTION -->
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<string>ca-app-pub-1248849491784311~9913979963</string>
 	
 	<!-- SKAdNetwork IDs for AdMob -->
 	<key>SKAdNetworkItems</key>

@@ -19,20 +19,20 @@ enum TrackingAuthorizationStatus {
 }
 
 // ============================================
-// AD UNIT ID'LERİ
+// AD UNIT ID'LERİ - PRODUCTION
 // ============================================
 const AD_CONFIG = {
   ios: {
-    banner: 'ca-app-pub-1248849491784311/1974413218', // Production
-    rewarded: 'ca-app-pub-1248849491784311/5131893747', // Production
-    interstitial: 'ca-app-pub-1248849491784311/9661331545', // Production
-    native: 'ca-app-pub-1248849491784311/7154571796', // Production (ileride kullanılacak)
+    banner: 'ca-app-pub-1248849491784311/1974413218',
+    rewarded: 'ca-app-pub-1248849491784311/5131893747',
+    interstitial: 'ca-app-pub-1248849491784311/9661331545',
+    native: 'ca-app-pub-1248849491784311/7154571796',
   },
   android: {
-    // Android ID'leri sonra eklenecek - şimdilik test ID'leri
-    banner: 'ca-app-pub-3940256099942544/6300978111', // Test ID
-    rewarded: 'ca-app-pub-3940256099942544/5224354917', // Test ID
-    interstitial: 'ca-app-pub-3940256099942544/1033173712', // Test ID
+    banner: 'ca-app-pub-1248849491784311/4377640305',
+    rewarded: 'ca-app-pub-1248849491784311/1770005876',
+    interstitial: 'ca-app-pub-1248849491784311/2779835214',
+    native: 'ca-app-pub-1248849491784311/1714165556',
   },
 };
 
@@ -170,11 +170,11 @@ export const initializeAdMob = async (): Promise<boolean> => {
     }
     
     await AdMob.initialize({
-      // iOS = production, Android = test (henüz ID yok)
-      initializeForTesting: platform === 'android',
+      // Production mode - tüm platformlar için gerçek reklamlar
+      initializeForTesting: false,
     });
     isInitialized = true;
-    console.log('AdMob initialized successfully');
+    console.log('AdMob initialized successfully (PRODUCTION)');
     return true;
   } catch (error) {
     console.error('AdMob initialization failed:', error);
@@ -204,7 +204,7 @@ export const showBannerAd = async (): Promise<boolean> => {
       adSize: BannerAdSize.ADAPTIVE_BANNER,
       position: BannerAdPosition.BOTTOM_CENTER,
       margin: 0,
-      isTesting: platform === 'android', // iOS = production, Android = test
+      isTesting: false, // Production mode
     });
     
     isBannerShowing = true;
@@ -245,7 +245,7 @@ export const prepareRewardedAd = async (): Promise<boolean> => {
     const platform = getPlatform();
     await AdMob.prepareRewardVideoAd({
       adId: AD_CONFIG[platform].rewarded,
-      isTesting: platform === 'android', // iOS = production, Android = test
+      isTesting: false, // Production mode
     });
     return true;
   } catch (error) {
@@ -292,7 +292,7 @@ export const prepareInterstitialAd = async (): Promise<boolean> => {
     const platform = getPlatform();
     await AdMob.prepareInterstitial({
       adId: AD_CONFIG[platform].interstitial,
-      isTesting: platform === 'android', // iOS = production, Android = test
+      isTesting: false, // Production mode
     });
     return true;
   } catch (error) {

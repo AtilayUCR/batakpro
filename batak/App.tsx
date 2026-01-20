@@ -50,6 +50,8 @@ import {
   logLevelUp, logOnboardingCompleted, logTrumpSelected, logCoinEarned,
   logCoinSpent, logSettingChanged, logScreenView, setUserProperties
 } from './utils/analyticsSystem';
+import { initializeCrashlytics, logGameState, setUserId as setCrashlyticsUserId } from './utils/crashlyticsSystem';
+import { initializePushNotifications, getFCMToken } from './utils/pushNotificationSystem';
 
 // --- AUDIO HELPERS ---
 const SOUND_PACKS: Record<SoundPack, { deal: string; play: string }> = {
@@ -426,11 +428,18 @@ const AppContent: React.FC = () => {
     loadSounds(gameSettings.soundPack);
   }, [gameSettings.soundPack, loadSounds]);
 
-  // AdMob, Analytics ve Store başlatma
+  // AdMob, Analytics, Crashlytics, Push ve Store başlatma
   useEffect(() => {
-    const setupAds = async () => {
+    const setupServices = async () => {
       // Firebase Analytics başlat
       await initializeAnalytics();
+      
+      // Firebase Crashlytics başlat
+      await initializeCrashlytics();
+      setCrashlyticsUserId(userProfile.username || 'anonymous');
+      
+      // Push Notifications başlat
+      await initializePushNotifications();
       
       // AdMob başlat (iOS'ta ATT izni de istenir)
       const initialized = await initializeAdMob();
@@ -450,7 +459,7 @@ const AppContent: React.FC = () => {
         isPremium: isPremiumUser(),
       });
     };
-    setupAds();
+    setupServices();
     
     // Günün ilk oyunu bonusu kontrolü
     if (isFirstGameOfDay()) {
