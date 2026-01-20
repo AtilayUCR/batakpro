@@ -120,6 +120,42 @@ export interface LastGameResult {
   bid: number;
   wasBatak: boolean;
   timestamp: string;
+  trumpSuit?: string; // Koz rengi
+}
+
+// Oyun geçmişi için
+export interface GameHistoryEntry {
+  mode: GameMode;
+  won: boolean;
+  coinsEarned: number;
+  tricksWon: number;
+  bid: number;
+  wasBatak: boolean;
+  trumpSuit?: string;
+  timestamp: string;
+  difficulty: string;
+}
+
+// Mod bazlı istatistikler
+export interface ModeStats {
+  [key: string]: {
+    played: number;
+    won: number;
+    totalTricks: number;
+  };
+}
+
+// Koz bazlı istatistikler
+export interface TrumpStats {
+  [key: string]: {
+    used: number;
+    won: number;
+  };
+}
+
+// Saatlik oyun istatistikleri
+export interface HourlyStats {
+  [hour: number]: number; // Saat -> oyun sayısı
 }
 
 export interface PowerUp {
@@ -167,6 +203,13 @@ export interface UserProfile {
   undoCount: number; // Kullanılabilir undo sayısı
   hintCount: number; // Kullanılabilir ipucu sayısı
   streakProtectionCount: number; // Streak koruma sayısı
+  // Yeni özellikler
+  isOnboarded: boolean; // Onboarding tamamlandı mı
+  gameHistory: GameHistoryEntry[]; // Son 5 oyun
+  modeStats: ModeStats; // Mod bazlı istatistikler
+  trumpStats: TrumpStats; // Koz bazlı istatistikler
+  hourlyStats: HourlyStats; // Saatlik oyun istatistikleri
+  themeMode: 'light' | 'dark' | 'system'; // Tema modu
 }
 
 export interface Player {

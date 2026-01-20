@@ -1,7 +1,7 @@
 
-import React, { Component, useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Home, Settings, Trophy, Coins, Check, Play, BarChart3, ShieldCheck, Flame, User as UserIcon, X, Spade, AlertCircle, Skull, Zap, Heart, Layers, Gauge, Palette, ChevronDown, ChevronUp, MessageCircle, TrendingUp, Target, Award, Volume2, VolumeX, Music, Undo2, Lightbulb, Shield, Smartphone, RotateCcw } from 'lucide-react';
-import { Card, Suit, Rank, Player, GamePhase, PlayedCard, Difficulty, GameSettings, UserProfile, GameMode, HouseRules, CardBack, GameTheme, SoundPack, BidHistoryEntry, LastGameResult, DailyChallenge } from './types';
+import { Card, Suit, Rank, Player, GamePhase, PlayedCard, Difficulty, GameSettings, UserProfile, GameMode, HouseRules, CardBack, GameTheme, SoundPack, BidHistoryEntry, LastGameResult, DailyChallenge, GameHistoryEntry, ModeStats, TrumpStats, HourlyStats } from './types';
 import { createDeck, shuffleDeck, dealCards, isValidMove, getBotMove, determineTrickWinner, getThreeUniqueBotNames, evaluateHand, getBotQuote, getBotBid, calculateRoundScore, sortHandWithTrump, getCurrentWinningCard } from './utils/batakLogic';
 import { 
   claimDailyReward, canClaimDailyReward, getCurrentStreakDay, getDailyRewards,
@@ -109,28 +109,20 @@ const CardUI: React.FC<CardProps> = ({ card, onClick, className = '', style = {}
 };
 
 // --- ERROR BOUNDARY ---
-interface ErrorBoundaryProps {
-  children?: React.ReactNode;
-}
-
-interface ErrorBoundaryState {
-  hasError: boolean;
-}
-
-// Fix: Correctly extending Component with generics to ensure 'props' and 'state' are available, avoiding line 98 error.
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
+// @ts-ignore - Class component için gerekli
+class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: { children?: React.ReactNode }) {
     super(props);
-    this.state = {
-      hasError: false
-    };
+    // @ts-ignore
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(_: any): ErrorBoundaryState { 
+  static getDerivedStateFromError(): { hasError: boolean } { 
     return { hasError: true }; 
   }
   
-  render() {
+  render(): React.ReactNode {
+    // @ts-ignore
     if (this.state.hasError) {
       return (
         <div className="w-full h-screen bg-[#022c22] flex flex-col items-center justify-center text-white text-center p-6">
@@ -140,9 +132,67 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         </div>
       );
     }
+    // @ts-ignore
     return this.props.children;
   }
 }
+
+// --- CONFETTI COMPONENT ---
+const Confetti: React.FC = () => {
+  const colors = ['#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899'];
+  const pieces = Array.from({ length: 50 }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    delay: Math.random() * 0.5,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    size: Math.random() * 8 + 4,
+    duration: Math.random() * 2 + 2,
+  }));
+  
+  return (
+    <div className="fixed inset-0 pointer-events-none z-[1000] overflow-hidden">
+      {pieces.map(p => (
+        <div
+          key={p.id}
+          className="absolute animate-confetti"
+          style={{
+            left: `${p.left}%`,
+            top: '-20px',
+            width: `${p.size}px`,
+            height: `${p.size}px`,
+            backgroundColor: p.color,
+            borderRadius: Math.random() > 0.5 ? '50%' : '0',
+            animationDelay: `${p.delay}s`,
+            animationDuration: `${p.duration}s`,
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes confetti {
+          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+        .animate-confetti { animation: confetti linear forwards; }
+      `}</style>
+    </div>
+  );
+};
+
+// --- AVATAR OPTIONS ---
+const AVATAR_OPTIONS = [
+  { id: 'gamepad', icon: '🎮', label: 'Oyuncu' },
+  { id: 'crown', icon: '👑', label: 'Kral' },
+  { id: 'fire', icon: '🔥', label: 'Ateşli' },
+  { id: 'star', icon: '⭐', label: 'Yıldız' },
+  { id: 'diamond', icon: '💎', label: 'Elmas' },
+  { id: 'heart', icon: '❤️', label: 'Kalp' },
+  { id: 'spade', icon: '♠️', label: 'Maça' },
+  { id: 'club', icon: '♣️', label: 'Sinek' },
+  { id: 'thunder', icon: '⚡', label: 'Şimşek' },
+  { id: 'trophy', icon: '🏆', label: 'Şampiyon' },
+  { id: 'rocket', icon: '🚀', label: 'Roket' },
+  { id: 'ninja', icon: '🥷', label: 'Ninja' },
+];
 
 // --- MAIN APP ---
 const AppContent: React.FC = () => {
@@ -245,6 +295,13 @@ const AppContent: React.FC = () => {
         if (!parsed.undoCount) parsed.undoCount = 0;
         if (!parsed.hintCount) parsed.hintCount = 0;
         if (!parsed.streakProtectionCount) parsed.streakProtectionCount = 0;
+        // Yeni özellikler
+        if (parsed.isOnboarded === undefined) parsed.isOnboarded = parsed.stats?.totalGames > 0; // Eski kullanıcılar için
+        if (!parsed.gameHistory) parsed.gameHistory = [];
+        if (!parsed.modeStats) parsed.modeStats = {};
+        if (!parsed.trumpStats) parsed.trumpStats = {};
+        if (!parsed.hourlyStats) parsed.hourlyStats = {};
+        if (!parsed.themeMode) parsed.themeMode = 'system';
         return parsed;
       } catch {
         // Hatalı kayıt, varsayılan değerleri kullan
@@ -283,8 +340,24 @@ const AppContent: React.FC = () => {
       undoCount: 0,
       hintCount: 0,
       streakProtectionCount: 0,
+      // Yeni özellikler
+      isOnboarded: false,
+      gameHistory: [],
+      modeStats: {},
+      trumpStats: {},
+      hourlyStats: {},
+      themeMode: 'system' as const,
     };
   });
+  
+  // Onboarding ve UI state'leri
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+  const [onboardingStep, setOnboardingStep] = useState<number>(0);
+  const [onboardingName, setOnboardingName] = useState<string>('');
+  const [onboardingAvatar, setOnboardingAvatar] = useState<string>('');
+  const [showConfetti, setShowConfetti] = useState<boolean>(false);
+  const [gameEndMessage, setGameEndMessage] = useState<{ type: 'win' | 'lose' | 'batak'; coins: number } | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
 
   const updateUserStats = (results: { scores: number[], batakPlayers: number[], winnerId?: number }, currentPlayers: Player[]) => {
     setUserProfile(prev => {
@@ -521,12 +594,43 @@ const AppContent: React.FC = () => {
     }
   }, [phase]);
   
-  // Vibrasyon fonksiyonu
-  const vibrate = (pattern: number | number[] = 50) => {
-    if (gameSettings.vibrationEnabled && userProfile.vibrationEnabled && navigator.vibrate) {
-      navigator.vibrate(pattern);
-    }
+  // Vibrasyon fonksiyonu - çeşitli pattern'lar
+  const vibrate = (type: 'tap' | 'win' | 'lose' | 'batak' | 'levelup' = 'tap') => {
+    if (!gameSettings.vibrationEnabled || !userProfile.vibrationEnabled || !navigator.vibrate) return;
+    
+    const patterns: Record<string, number | number[]> = {
+      tap: 20,
+      win: [50, 50, 100, 50, 150], // Mutlu titreşim
+      lose: [100, 50, 100], // Üzgün titreşim
+      batak: [200, 100, 200, 100, 200], // Ağır titreşim
+      levelup: [50, 30, 50, 30, 100, 50, 150], // Kutlama titreşimi
+    };
+    navigator.vibrate(patterns[type] || 20);
   };
+  
+  // Gece modu algılama
+  useEffect(() => {
+    const checkDarkMode = () => {
+      if (userProfile.themeMode === 'system') {
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        setIsDarkMode(isDark);
+      } else {
+        setIsDarkMode(userProfile.themeMode === 'dark');
+      }
+    };
+    
+    checkDarkMode();
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', checkDarkMode);
+    return () => mediaQuery.removeEventListener('change', checkDarkMode);
+  }, [userProfile.themeMode]);
+  
+  // Onboarding kontrolü
+  useEffect(() => {
+    if (!userProfile.isOnboarded && phase === GamePhase.LOBBY) {
+      setShowOnboarding(true);
+    }
+  }, [userProfile.isOnboarded, phase]);
 
   const playSfx = (key: 'deal' | 'play') => {
     if (!gameSettings.soundEnabled) return;
@@ -541,13 +645,52 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const getSpeedDelay = () => {
-    switch (gameSettings.gameSpeed) {
+  // Bot düşünme süresi - değişkenlik eklenmiş
+  const getSpeedDelay = (isHardDecision: boolean = false) => {
+    const baseDelay = (() => {
+      switch (gameSettings.gameSpeed) {
         case 'slow': return 1500;
         case 'fast': return 400;
         case 'turbo': return 150;
         default: return 800;
+      }
+    })();
+    
+    // Zor kararlarda %50 daha uzun düşün
+    const multiplier = isHardDecision ? 1.5 : 1;
+    // %20 rastgele değişkenlik ekle
+    const randomVariation = 0.8 + Math.random() * 0.4;
+    
+    return Math.round(baseDelay * multiplier * randomVariation);
+  };
+  
+  // Adaptive difficulty - son 5 oyuna göre zorluk ayarla
+  const getAdaptiveDifficulty = (): Difficulty => {
+    const history = userProfile.gameHistory || [];
+    if (history.length < 3) return gameSettings.difficulty;
+    
+    const last5 = history.slice(0, 5);
+    const winCount = last5.filter(g => g.won).length;
+    const winRate = winCount / last5.length;
+    
+    // %80+ kazanma - zorlaştır
+    if (winRate >= 0.8) {
+      const difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD, Difficulty.LEGEND, Difficulty.INVINCIBLE];
+      const currentIdx = difficulties.indexOf(gameSettings.difficulty);
+      if (currentIdx < difficulties.length - 1) {
+        return difficulties[currentIdx + 1];
+      }
     }
+    // %20- kazanma - kolaylaştır
+    else if (winRate <= 0.2) {
+      const difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD, Difficulty.LEGEND, Difficulty.INVINCIBLE];
+      const currentIdx = difficulties.indexOf(gameSettings.difficulty);
+      if (currentIdx > 0) {
+        return difficulties[currentIdx - 1];
+      }
+    }
+    
+    return gameSettings.difficulty;
   };
 
   const triggerBotMessage = (playerId: number, type: 'win' | 'lose' | 'bid' | 'play') => {
@@ -728,7 +871,7 @@ const AppContent: React.FC = () => {
       timestamp: Date.now(),
     }]);
     
-    vibrate(30); // Haptic feedback
+    vibrate('tap'); // Haptic feedback
     
     setPlayers(prev => {
       const updated = prev.map(p => {
@@ -824,7 +967,7 @@ const AppContent: React.FC = () => {
     if (currentTrick.length >= playerCount || isBidding) return;
     
     playSfx('play');
-    vibrate(20);
+    vibrate('tap');
     
     // Undo için son hamleyi kaydet (sadece kullanıcı için)
     if (playerId === 0 && currentTrick.length === 0) {
@@ -1192,7 +1335,47 @@ const AppContent: React.FC = () => {
           bid: userPlayer.currentBid,
           wasBatak: isUserBatak,
           timestamp: new Date().toISOString(),
+          trumpSuit: trumpSuit || undefined,
         };
+        
+        // Oyun geçmişine ekle (son 5 oyun)
+        const historyEntry = {
+          mode: selectedMode,
+          won: isUserWinner,
+          coinsEarned,
+          tricksWon: userPlayer.tricksWon,
+          bid: userPlayer.currentBid,
+          wasBatak: isUserBatak,
+          trumpSuit: trumpSuit || undefined,
+          timestamp: new Date().toISOString(),
+          difficulty: gameSettings.difficulty,
+        };
+        updated.gameHistory = [historyEntry, ...(updated.gameHistory || [])].slice(0, 5);
+        
+        // Mod istatistiklerini güncelle
+        const modeKey = selectedMode;
+        if (!updated.modeStats) updated.modeStats = {};
+        if (!updated.modeStats[modeKey]) {
+          updated.modeStats[modeKey] = { played: 0, won: 0, totalTricks: 0 };
+        }
+        updated.modeStats[modeKey].played += 1;
+        if (isUserWinner) updated.modeStats[modeKey].won += 1;
+        updated.modeStats[modeKey].totalTricks += userPlayer.tricksWon;
+        
+        // Koz istatistiklerini güncelle
+        if (trumpSuit) {
+          if (!updated.trumpStats) updated.trumpStats = {};
+          if (!updated.trumpStats[trumpSuit]) {
+            updated.trumpStats[trumpSuit] = { used: 0, won: 0 };
+          }
+          updated.trumpStats[trumpSuit].used += 1;
+          if (isUserWinner) updated.trumpStats[trumpSuit].won += 1;
+        }
+        
+        // Saatlik istatistikler
+        const currentHour = new Date().getHours();
+        if (!updated.hourlyStats) updated.hourlyStats = {};
+        updated.hourlyStats[currentHour] = (updated.hourlyStats[currentHour] || 0) + 1;
         
         // Günlük challenge progress
         if (updated.dailyChallenge && !updated.dailyChallenge.completed) {
@@ -1240,6 +1423,27 @@ const AppContent: React.FC = () => {
         ...p,
         totalScore: p.totalScore + (results.scores[idx] || 0)
       }));
+      
+      // Oyun sonu mesajı ve efektler
+      const userWon = results.winnerId === 0 || (selectedMode === GameMode.ESLI && (results.winnerId === 0 || results.winnerId === 2));
+      const userBatak = results.batakPlayers.includes(0);
+      const endCoins = getDifficultyCoins(gameSettings.difficulty);
+      
+      if (userWon) {
+        setShowConfetti(true);
+        vibrate('win');
+        setGameEndMessage({ type: 'win', coins: endCoins.win });
+        setTimeout(() => setShowConfetti(false), 4000);
+      } else if (userBatak) {
+        vibrate('batak');
+        setGameEndMessage({ type: 'batak', coins: -endCoins.batak });
+      } else {
+        vibrate('lose');
+        setGameEndMessage({ type: 'lose', coins: -endCoins.lose });
+      }
+      
+      // Mesajı temizle
+      setTimeout(() => setGameEndMessage(null), 5000);
       
       setPhase(GamePhase.RESULT);
       return updated;
@@ -1654,44 +1858,131 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-        {/* Mod Bazlı İstatistikler */}
+        {/* Son 5 Oyun Geçmişi */}
+        {userProfile.gameHistory && userProfile.gameHistory.length > 0 && (
+          <div className="w-full max-w-md bg-white/5 p-6 rounded-[2rem] border border-white/10 mt-6">
+            <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+              <RotateCcw size={16} className="text-purple-400" />
+              SON 5 OYUN
+            </h3>
+            <div className="space-y-2">
+              {userProfile.gameHistory.slice(0, 5).map((game, idx) => (
+                <div key={idx} className={`flex items-center justify-between p-3 rounded-xl ${game.won ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${game.won ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                      {game.won ? '🏆' : game.wasBatak ? '💀' : '❌'}
+                    </div>
+                    <div>
+                      <div className="text-white text-xs font-bold">{game.mode}</div>
+                      <div className="text-white/40 text-[10px]">{game.tricksWon} el | {game.difficulty}</div>
+                    </div>
+                  </div>
+                  <div className={`text-sm font-black ${game.coinsEarned >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {game.coinsEarned >= 0 ? '+' : ''}{game.coinsEarned}🪙
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Mod Bazlı İstatistikler - Gerçek Veriler */}
         <div className="w-full max-w-md bg-white/5 p-6 rounded-[2rem] border border-white/10 mt-6">
           <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
             <Layers size={16} className="text-blue-400" />
             MOD BAZLI PERFORMANS
           </h3>
           <div className="space-y-3">
-            {[
-              { mode: 'İhaleli', icon: <Zap size={12} />, color: 'bg-emerald-500', played: Math.floor(userProfile.stats.totalGames * 0.4) },
-              { mode: 'Koz Maça', icon: <Spade size={12} />, color: 'bg-blue-500', played: Math.floor(userProfile.stats.totalGames * 0.25) },
-              { mode: 'Eşli', icon: <ShieldCheck size={12} />, color: 'bg-purple-500', played: Math.floor(userProfile.stats.totalGames * 0.2) },
-              { mode: 'Hızlı', icon: <Flame size={12} />, color: 'bg-orange-500', played: Math.floor(userProfile.stats.totalGames * 0.1) },
-              { mode: 'Diğer', icon: <Target size={12} />, color: 'bg-pink-500', played: Math.floor(userProfile.stats.totalGames * 0.05) },
-            ].map((item, idx) => {
-              const percentage = userProfile.stats.totalGames > 0 
-                ? Math.round((item.played / userProfile.stats.totalGames) * 100) 
-                : 0;
+            {(() => {
+              const modeStats = userProfile.modeStats || {};
+              type ModeStatEntry = { played: number; won: number; totalTricks: number };
+              const modes = Object.entries(modeStats).sort((a, b) => (b[1] as ModeStatEntry).played - (a[1] as ModeStatEntry).played).slice(0, 5) as [string, ModeStatEntry][];
+              const colors = ['bg-emerald-500', 'bg-blue-500', 'bg-purple-500', 'bg-orange-500', 'bg-pink-500'];
+              
+              if (modes.length === 0) {
+                return (
+                  <div className="text-center text-white/40 py-4">
+                    Henüz oyun oynamadın
+                  </div>
+                );
+              }
+              
+              return modes.map(([mode, stats], idx) => {
+                const winRate = stats.played > 0 ? Math.round((stats.won / stats.played) * 100) : 0;
+                return (
+                  <div key={mode} className="flex items-center gap-3">
+                    <div className={`w-8 h-8 ${colors[idx % colors.length]} rounded-lg flex items-center justify-center text-white text-xs font-black`}>
+                      {winRate}%
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-white text-xs font-bold">{mode}</span>
+                        <span className="text-white/40 text-[10px]">{stats.won}/{stats.played} galibiyet</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full ${colors[idx % colors.length]} rounded-full transition-all`}
+                          style={{ width: `${winRate}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+
+        {/* Favori Koz Renkleri */}
+        <div className="w-full max-w-md bg-white/5 p-6 rounded-[2rem] border border-white/10 mt-6">
+          <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+            <Spade size={16} className="text-yellow-400" />
+            FAVORİ KOZ RENKLERİ
+          </h3>
+          <div className="grid grid-cols-4 gap-3">
+            {[Suit.SPADES, Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS].map((suit) => {
+              const stats = userProfile.trumpStats?.[suit] || { used: 0, won: 0 };
+              const winRate = stats.used > 0 ? Math.round((stats.won / stats.used) * 100) : 0;
               return (
-                <div key={idx} className="flex items-center gap-3">
-                  <div className={`w-8 h-8 ${item.color} rounded-lg flex items-center justify-center text-white`}>
-                    {item.icon}
+                <div key={suit} className="bg-black/20 p-3 rounded-xl text-center border border-white/5">
+                  <div className={`text-3xl ${suit === Suit.HEARTS || suit === Suit.DIAMONDS ? 'text-rose-500' : 'text-white'}`}>
+                    {suit}
                   </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-white text-xs font-bold">{item.mode}</span>
-                      <span className="text-white/40 text-[10px]">{item.played} oyun</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full ${item.color} rounded-full transition-all`}
-                        style={{ width: `${percentage}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                  <span className="text-white/60 text-xs font-bold w-10 text-right">{percentage}%</span>
+                  <div className="text-white/60 text-[10px] mt-1">{stats.used} kullanım</div>
+                  <div className="text-emerald-400 text-xs font-black">{winRate}% kazanç</div>
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Saatlik Oyun Aktivitesi */}
+        <div className="w-full max-w-md bg-white/5 p-6 rounded-[2rem] border border-white/10 mt-6">
+          <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+            ⏰ EN AKTİF SAATLER
+          </h3>
+          <div className="flex items-end justify-between h-16 gap-0.5">
+            {Array.from({ length: 24 }, (_, hour) => {
+              const count = userProfile.hourlyStats?.[hour] || 0;
+              const hourlyValues = Object.values(userProfile.hourlyStats || {}) as number[];
+              const maxCount = Math.max(...(hourlyValues.length > 0 ? hourlyValues : [1]), 1);
+              const height = maxCount > 0 ? (count / maxCount) * 100 : 0;
+              return (
+                <div key={hour} className="flex-1 flex flex-col items-center">
+                  <div 
+                    className={`w-full rounded-t ${count > 0 ? 'bg-emerald-500' : 'bg-white/10'}`}
+                    style={{ height: `${Math.max(height, 5)}%` }}
+                  ></div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between mt-2 text-[8px] text-white/40">
+            <span>00:00</span>
+            <span>06:00</span>
+            <span>12:00</span>
+            <span>18:00</span>
+            <span>23:00</span>
           </div>
         </div>
 
@@ -1929,6 +2220,37 @@ const AppContent: React.FC = () => {
                      <span className="text-white text-[11px] font-black uppercase tracking-wider">BOT KONUŞMALARI</span>
                    </div>
                    <div className={`w-10 h-5 rounded-full transition-all relative ${ gameSettings.botChatEnabled ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ gameSettings.botChatEnabled ? 'translate-x-5' : '' }`}></div></div>
+                 </div>
+
+                 {/* THEME MODE - Gece/Gündüz */}
+                 <div className="space-y-2">
+                   <label className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] flex items-center gap-2">🌓 GÖRÜNÜM MODU</label>
+                   <div className="grid grid-cols-3 gap-2">
+                     {[
+                       { mode: 'light' as const, icon: '☀️', label: 'Açık' },
+                       { mode: 'dark' as const, icon: '🌙', label: 'Koyu' },
+                       { mode: 'system' as const, icon: '⚙️', label: 'Sistem' },
+                     ].map(({ mode, icon, label }) => (
+                       <button
+                         key={mode}
+                         onClick={() => {
+                           setUserProfile(p => {
+                             const updated = { ...p, themeMode: mode };
+                             localStorage.setItem('batakProfile', JSON.stringify(updated));
+                             return updated;
+                           });
+                         }}
+                         className={`py-3 rounded-xl font-black text-[9px] uppercase border-2 transition-all flex flex-col items-center gap-1 ${
+                           userProfile.themeMode === mode 
+                             ? 'bg-emerald-500 border-emerald-400 text-white shadow-lg' 
+                             : 'bg-black/20 border-white/5 text-white/40'
+                         }`}
+                       >
+                         <span className="text-lg">{icon}</span>
+                         {label}
+                       </button>
+                     ))}
+                   </div>
                  </div>
 
                  {/* DIFFICULTY */}
@@ -2597,7 +2919,7 @@ const AppContent: React.FC = () => {
                         if (result.success) {
                           setUserProfile(result.newProfile);
                           localStorage.setItem('batakProfile', JSON.stringify(result.newProfile));
-                          vibrate(50);
+                          vibrate('tap');
                         }
                       }}
                       disabled={userProfile.coins < powerUp.price}
@@ -3150,6 +3472,132 @@ const AppContent: React.FC = () => {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* CONFETTI */}
+        {showConfetti && <Confetti />}
+
+        {/* GAME END MESSAGE */}
+        {gameEndMessage && (
+          <div className="fixed inset-0 z-[900] flex items-center justify-center pointer-events-none">
+            <div className={`animate-bounce px-8 py-6 rounded-3xl shadow-2xl border-4 ${
+              gameEndMessage.type === 'win' 
+                ? 'bg-gradient-to-br from-emerald-500 to-green-600 border-emerald-300' 
+                : gameEndMessage.type === 'batak'
+                  ? 'bg-gradient-to-br from-red-600 to-rose-700 border-red-400'
+                  : 'bg-gradient-to-br from-gray-600 to-slate-700 border-gray-400'
+            }`}>
+              <div className="text-center">
+                <div className="text-5xl mb-2">
+                  {gameEndMessage.type === 'win' ? '🎉' : gameEndMessage.type === 'batak' ? '💀' : '😔'}
+                </div>
+                <div className="text-3xl font-black text-white mb-1">
+                  {gameEndMessage.type === 'win' ? 'KAZANDIN!' : gameEndMessage.type === 'batak' ? 'BATAK!' : 'KAYBETTİN'}
+                </div>
+                <div className={`text-xl font-bold ${gameEndMessage.coins >= 0 ? 'text-yellow-300' : 'text-red-300'}`}>
+                  {gameEndMessage.coins >= 0 ? '+' : ''}{gameEndMessage.coins} 🪙
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ONBOARDING MODAL */}
+        {showOnboarding && (
+          <div className="fixed inset-0 z-[1000] bg-gradient-to-b from-[#064e3b] to-[#022c22] flex items-center justify-center p-6">
+            <div className="w-full max-w-md">
+              {onboardingStep === 0 && (
+                <div className="text-center animate-fade-in">
+                  <div className="text-6xl mb-6">🃏</div>
+                  <h1 className="text-4xl font-black text-white italic mb-2">
+                    BATAK<span className="text-emerald-400">PRO</span>
+                  </h1>
+                  <p className="text-white/60 mb-8">Türkiye'nin en iyi Batak oyunu!</p>
+                  <button 
+                    onClick={() => setOnboardingStep(1)}
+                    className="w-full bg-emerald-500 text-white font-black py-4 rounded-2xl text-lg hover:bg-emerald-400 transition-all shadow-xl"
+                  >
+                    BAŞLA
+                  </button>
+                </div>
+              )}
+              
+              {onboardingStep === 1 && (
+                <div className="animate-fade-in">
+                  <h2 className="text-2xl font-black text-white text-center mb-6">İsmini Seç</h2>
+                  <input
+                    type="text"
+                    value={onboardingName}
+                    onChange={(e) => setOnboardingName(e.target.value.toUpperCase().slice(0, 12))}
+                    placeholder="OYUNCU ADI"
+                    className="w-full bg-black/30 border-2 border-white/20 rounded-2xl px-4 py-4 text-white text-center font-black text-xl placeholder:text-white/30 focus:border-emerald-400 focus:outline-none mb-6"
+                    maxLength={12}
+                  />
+                  <button 
+                    onClick={() => onboardingName.trim() && setOnboardingStep(2)}
+                    disabled={!onboardingName.trim()}
+                    className={`w-full font-black py-4 rounded-2xl text-lg transition-all shadow-xl ${
+                      onboardingName.trim() 
+                        ? 'bg-emerald-500 text-white hover:bg-emerald-400' 
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    DEVAM
+                  </button>
+                </div>
+              )}
+              
+              {onboardingStep === 2 && (
+                <div className="animate-fade-in">
+                  <h2 className="text-2xl font-black text-white text-center mb-6">Avatar Seç</h2>
+                  <div className="grid grid-cols-4 gap-3 mb-6">
+                    {AVATAR_OPTIONS.map(({ id, icon }) => (
+                      <button
+                        key={id}
+                        onClick={() => setOnboardingAvatar(id)}
+                        className={`aspect-square rounded-2xl text-3xl flex items-center justify-center border-2 transition-all ${
+                          onboardingAvatar === id 
+                            ? 'bg-emerald-500 border-emerald-300 scale-110 shadow-xl' 
+                            : 'bg-black/30 border-white/10 hover:border-white/30'
+                        }`}
+                      >
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                  <button 
+                    onClick={() => {
+                      if (onboardingAvatar) {
+                        setUserProfile(p => {
+                          const updated = {
+                            ...p,
+                            username: onboardingName.trim() || 'OYUNCU',
+                            avatarId: onboardingAvatar,
+                            isOnboarded: true,
+                          };
+                          localStorage.setItem('batakProfile', JSON.stringify(updated));
+                          return updated;
+                        });
+                        setShowOnboarding(false);
+                      }
+                    }}
+                    disabled={!onboardingAvatar}
+                    className={`w-full font-black py-4 rounded-2xl text-lg transition-all shadow-xl ${
+                      onboardingAvatar 
+                        ? 'bg-emerald-500 text-white hover:bg-emerald-400' 
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    OYUNA BAŞLA 🎮
+                  </button>
+                </div>
+              )}
+            </div>
+            <style>{`
+              @keyframes fade-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+              .animate-fade-in { animation: fade-in 0.5s ease-out; }
+            `}</style>
           </div>
         )}
       </ErrorBoundary>
