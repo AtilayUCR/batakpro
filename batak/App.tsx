@@ -186,12 +186,16 @@ const AppContent: React.FC = () => {
   // Bot kişilikleri
   const [botPersonalities, setBotPersonalities] = useState<{ personality: BotPersonality; name: string }[]>([]);
   
+  // İhale bitiş kontrolü için ref (race condition önlemek için)
+  const biddingEndingRef = useRef<boolean>(false);
+  
   // Liderlik tablosu
   const [leaderboard, setLeaderboard] = useState<Leaderboard>(() => {
     const lb = loadLeaderboard();
     return populateWithBots(lb);
   });
   const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
+  const [lobbyTab, setLobbyTab] = useState<'game' | 'daily' | 'shop'>('game');
   
   // Mini oyunlar
   const [guessGame, setGuessGame] = useState<GuessGame | null>(null);
@@ -217,6 +221,7 @@ const AppContent: React.FC = () => {
     soundEnabled: true,
     soundPack: 'arcade',
     vibrationEnabled: true,
+    botChatEnabled: true, // Botların konuşması
   });
 
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
@@ -368,11 +373,10 @@ const AppContent: React.FC = () => {
     
     const adFreeStatus = getAdFreeStatus();
     
-    if (phase === GamePhase.LOBBY || phase === GamePhase.STATISTICS || phase === GamePhase.RULES_SETUP) {
-      if (!adFreeStatus.isAdFree) {
-        showBannerAd();
-      }
-    } else if (phase === GamePhase.PLAYING || phase === GamePhase.BIDDING) {
+    // Tüm ekranlarda banner ads göster (reklamsız değilse)
+    if (!adFreeStatus.isAdFree) {
+      showBannerAd();
+    } else {
       hideBannerAd();
     }
   }, [phase, isAdReady]);
@@ -543,6 +547,9 @@ const AppContent: React.FC = () => {
   };
 
   const triggerBotMessage = (playerId: number, type: 'win' | 'lose' | 'bid' | 'play') => {
+    // Bot konuşmaları kapalıysa çık
+    if (!gameSettings.botChatEnabled) return;
+    
     // Gelişmiş bot kişilik sistemi kullan
     const botData = botPersonalities[playerId - 1];
     let msg: string;
@@ -668,6 +675,7 @@ const AppContent: React.FC = () => {
     setLastPlayedCard(null);
     setCanUndo(false);
     setHintCard(null);
+    biddingEndingRef.current = false; // İhale bitiş flag'ini sıfırla
 
     // Oynanan modları kaydet
     setPlayedModes(prev => new Set([...prev, selectedMode]));
@@ -752,29 +760,25 @@ const AppContent: React.FC = () => {
 
   // İhale bitiş kontrolü için ayrı useEffect
   useEffect(() => {
-    if (phase === GamePhase.BIDDING && isBidding) {
-      const activeBids = players.filter(p => p.currentBid > 0);
+    if (phase === GamePhase.BIDDING && isBidding && !biddingEndingRef.current) {
+      const playerCount = players.length;
       const passCount = players.filter(p => p.currentBid === -1).length;
+      const activeBidders = players.filter(p => p.currentBid > 0);
       
       // İhale bitiş koşulları:
-      // 1. 3 oyuncu pas geçtiyse ve en az 1 aktif ihale varsa (sadece 1 oyuncu aktif ihale yapıyor)
-      // 2. VEYA tüm oyuncular pas geçtiyse (hiç aktif ihale yok)
-      // 3. VEYA art arda 3 oyuncu pas geçtiyse (son 3 oyuncu pas)
-      
-      // Art arda 3 pas kontrolü: Son 3 oyuncunun hepsi pas geçtiyse
-      const lastThreeIndices = [(biddingPlayerIdx - 1 + 4) % 4, (biddingPlayerIdx - 2 + 4) % 4, (biddingPlayerIdx - 3 + 4) % 4];
-      const lastThreePassed = lastThreeIndices.every(idx => players[idx]?.currentBid === -1);
-      
+      // 1. Sadece 1 kişi aktif ihale vermiş ve diğer herkes pas geçmiş
+      // 2. VEYA herkes pas geçmiş
       const shouldEndBidding = 
-        (passCount >= 3 && activeBids.length > 0) || // 3+ pas ve aktif ihale var
-        (activeBids.length === 0 && passCount === 4) || // Hepsi pas
-        (activeBids.length === 1 && passCount >= 3) || // 1 aktif, 3+ pas
-        lastThreePassed; // Art arda 3 pas
+        (activeBidders.length === 1 && passCount === playerCount - 1) || // 1 kazanan, kalanlar pas
+        (passCount === playerCount); // Herkes pas
       
       if (shouldEndBidding) {
+        // İhale bitiyor - ref'i işaretle (race condition önlemek için)
+        biddingEndingRef.current = true;
+        
         // İhale bitti
         setTimeout(() => {
-          if (bidWinnerId !== null && activeBids.length > 0) {
+          if (bidWinnerId !== null && activeBidders.length > 0) {
             // İhaleyi kazanan koz seçmeli
             const winner = players.find(p => p.id === bidWinnerId);
             if (winner && winner.isBot) {
@@ -782,12 +786,12 @@ const AppContent: React.FC = () => {
               const suits = [Suit.SPADES, Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS];
               const selectedSuit = suits[Math.floor(Math.random() * suits.length)];
               setTrumpSuit(selectedSuit);
-              // Kartları koz rengine göre sırala
               setPlayers(prev => prev.map(p => ({
                 ...p,
                 hand: sortHandWithTrump(p.hand, selectedSuit)
               })));
               setIsBidding(false);
+              biddingEndingRef.current = false; // Sıfırla
               setPhase(GamePhase.PLAYING);
               setCurrentPlayerIdx(bidWinnerId);
             } else if (winner) {
@@ -795,16 +799,17 @@ const AppContent: React.FC = () => {
               setShowTrumpSelection(true);
             }
           } else {
-            // Hiç kimse ihale yapmadı, pas geçildi - koz maça olarak devam
-    setTrumpSuit(Suit.SPADES); 
-    setIsBidding(false);
+            // Hiç kimse ihale yapmadı - koz maça olarak devam
+            setTrumpSuit(Suit.SPADES); 
+            setIsBidding(false);
+            biddingEndingRef.current = false; // Sıfırla
             setPhase(GamePhase.PLAYING);
-    setCurrentPlayerIdx(0);
+            setCurrentPlayerIdx(0);
           }
-        }, 500);
+        }, 300);
       }
     }
-  }, [phase, isBidding, players, bidWinnerId]);
+  }, [phase, isBidding, players, bidWinnerId, biddingPlayerIdx]);
 
   const startBidding = (bid: number) => {
     makeBid(0, bid);
@@ -893,45 +898,99 @@ const AppContent: React.FC = () => {
     }
   };
 
+  // Kullanıcı pas geçtiyse veya en yüksek ihale verdiyse sırayı otomatik geç
+  useEffect(() => {
+    // İhale bitiyorsa işlem yapma
+    if (biddingEndingRef.current) return;
+    
+    if (phase === GamePhase.BIDDING && isBidding && biddingPlayerIdx === 0) {
+      const user = players[0];
+      if (!user) return;
+      
+      // Kullanıcı pas geçtiyse sırayı geç
+      if (user.currentBid === -1) {
+        const nextPlayer = (biddingPlayerIdx + 1) % players.length;
+        setTimeout(() => {
+          if (!biddingEndingRef.current) {
+            setBiddingPlayerIdx(nextPlayer);
+          }
+        }, 300);
+      }
+      // Kullanıcı en yüksek ihaleyi verdiyse ve bekliyor
+      else if (user.currentBid === highestBid && highestBid > 0) {
+        // Bekle, diğerleri cevap versin - sırayı geç
+        const nextPlayer = (biddingPlayerIdx + 1) % players.length;
+        setTimeout(() => {
+          if (!biddingEndingRef.current) {
+            setBiddingPlayerIdx(nextPlayer);
+          }
+        }, 500);
+      }
+    }
+  }, [phase, isBidding, biddingPlayerIdx, players, highestBid]);
+
   // Bot ihale mantığı
   useEffect(() => {
+    // İhale bitiyorsa işlem yapma
+    if (biddingEndingRef.current) return;
+    
     if (phase === GamePhase.BIDDING && isBidding && players[biddingPlayerIdx]?.isBot) {
       const bot = players[biddingPlayerIdx];
       if (!bot) return;
       
-      // Bot henüz ihale yapmadıysa (currentBid === 0) veya pas geçmediyse (currentBid !== -1)
-      // Ama aslında bot bir kez pas geçtiyse bir daha ihale yapamaz
-      // Sadece henüz ihale yapmamış botlar için çalış
-      if (bot.currentBid === 0) {
+      // Bot pas geçtiyse (-1) bir daha ihale yapamaz
+      if (bot.currentBid === -1) {
+        const nextPlayer = (biddingPlayerIdx + 1) % players.length;
+        setTimeout(() => {
+          if (!biddingEndingRef.current) {
+            setBiddingPlayerIdx(nextPlayer);
+          }
+        }, 300);
+        return;
+      }
+      
+      // Bot zaten en yüksek ihaleyi verdiyse bekle
+      if (bot.currentBid > 0 && bot.currentBid === highestBid && bidWinnerId === bot.id) {
+        const nextPlayer = (biddingPlayerIdx + 1) % players.length;
+        setTimeout(() => {
+          if (!biddingEndingRef.current) {
+            setBiddingPlayerIdx(nextPlayer);
+          }
+        }, 300);
+        return;
+      }
+      
+      // Bot ihale yapabilir (henüz yapmadı veya birisi daha yüksek yaptı)
       const delay = getSpeedDelay();
       const t = setTimeout(() => {
-          const botBid = getBotBid(
-            bot.hand,
-            highestBid,
-            gameSettings.difficulty,
-            biddingPlayerIdx
-          );
-          
-          if (botBid) {
-            if (Math.random() > 0.3) {
-              triggerBotMessage(biddingPlayerIdx, 'bid');
-            }
-          } else {
-            // Pas geçti
-            if (Math.random() > 0.5) {
-              setBotMessages(prev => ({...prev, [biddingPlayerIdx]: 'Pas'}));
-              setTimeout(() => {
-                setBotMessages(prev => ({...prev, [biddingPlayerIdx]: null}));
-              }, 1500);
-            }
+        if (biddingEndingRef.current) return;
+        
+        const botBid = getBotBid(
+          bot.hand,
+          highestBid,
+          gameSettings.difficulty,
+          biddingPlayerIdx
+        );
+        
+        // botBid null ise veya highestBid'den büyük değilse pas geç
+        if (!botBid || botBid <= highestBid) {
+          // Pas geçti
+          if (Math.random() > 0.5) {
+            setBotMessages(prev => ({...prev, [biddingPlayerIdx]: 'Pas'}));
+            setTimeout(() => setBotMessages(prev => ({...prev, [biddingPlayerIdx]: null})), 1500);
           }
-          
+          makeBid(biddingPlayerIdx, null);
+        } else {
+          // İhale yap
+          if (Math.random() > 0.3) {
+            triggerBotMessage(biddingPlayerIdx, 'bid');
+          }
           makeBid(biddingPlayerIdx, botBid);
+        }
       }, delay);
       return () => clearTimeout(t);
-      }
     }
-  }, [phase, isBidding, biddingPlayerIdx, players, highestBid, gameSettings.difficulty]);
+  }, [phase, isBidding, biddingPlayerIdx, players, highestBid, bidWinnerId, gameSettings.difficulty]);
 
   // Bot kart oynama mantığı
   useEffect(() => {
@@ -965,6 +1024,7 @@ const AppContent: React.FC = () => {
     })));
     setShowTrumpSelection(false);
     setIsBidding(false);
+    biddingEndingRef.current = false; // İhale bitiş flag'ini sıfırla
     setPhase(GamePhase.PLAYING);
     if (bidWinnerId !== null) {
       setCurrentPlayerIdx(bidWinnerId);
@@ -1230,284 +1290,291 @@ const AppContent: React.FC = () => {
   }, [currentTrick, trumpSuit, players, trickCount, selectedMode]);
 
   const renderLobby = () => (
-    <div className="w-full h-full flex flex-col items-center justify-between p-4 sm:p-8 bg-gradient-to-b from-[#064e3b] to-[#022c22] relative z-10 overflow-hidden">
-      <div className="w-full max-w-2xl flex justify-between items-center bg-white/5 backdrop-blur-2xl p-3 sm:p-4 rounded-3xl border border-white/10 shadow-2xl">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setShowProfileEdit(true)}>
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg hover:scale-110 transition-transform text-xl">
-            {userProfile.avatarId || <UserIcon size={20}/>}
-          </div>
-          <div className="flex flex-col">
-            <h3 className="text-white font-bold text-xs sm:text-sm">{userProfile.username}</h3>
-            <div className="flex items-center gap-1">
-                <span className="text-[9px] text-white/40 font-black uppercase tracking-widest">{userProfile.league} Lig</span>
-                <span className="text-[8px] bg-emerald-500/20 text-emerald-400 px-1 rounded">Lv. {userProfile.level}</span>
+    <div className="w-full h-full flex flex-col bg-gradient-to-b from-[#064e3b] to-[#022c22] relative z-10">
+      {/* Header - Sabit */}
+      <div className="flex-shrink-0 p-4 pt-12">
+        <div className="w-full max-w-2xl mx-auto flex justify-between items-center bg-white/5 backdrop-blur-2xl p-3 rounded-2xl border border-white/10 shadow-2xl">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setShowProfileEdit(true)}>
+            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg text-lg">
+              {userProfile.avatarId || <UserIcon size={18}/>}
+            </div>
+            <div className="flex flex-col">
+              <h3 className="text-white font-bold text-xs">{userProfile.username}</h3>
+              <span className="text-[8px] text-emerald-400 font-black">Lv.{userProfile.level} • {userProfile.league}</span>
             </div>
           </div>
+          
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-lg border border-white/5">
+              <Coins size={10} className="text-yellow-400"/><span className="text-yellow-500 font-black text-[10px]">{userProfile.coins.toLocaleString()}</span>
+            </div>
+            <button onClick={() => setPhase(GamePhase.STATISTICS)} className="bg-white/10 p-2 rounded-lg text-white"><BarChart3 size={16}/></button>
+            <button onClick={() => setShowSettings(true)} className="bg-white/10 p-2 rounded-lg text-white"><Settings size={16}/></button>
+          </div>
         </div>
+      </div>
+
+      {/* Content - Scrollable - Tab bar (~50px) + Banner (~50px) için padding */}
+      <div className="flex-1 overflow-y-auto px-4 pb-28">
+        <div className="w-full max-w-2xl mx-auto">
+          {/* Logo */}
+          <div className="text-center py-3">
+            <h1 className="text-4xl font-black text-white italic tracking-tighter uppercase drop-shadow-2xl">
+              BATAK<span className="text-emerald-500">PRO</span>
+            </h1>
+          </div>
+
+          {/* Tab Content */}
+          {lobbyTab === 'game' && (
+            <>
+              {/* Oyun Modları */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {[
+                  { mode: GameMode.IHALELI, icon: <Zap size={20}/>, label: 'İHALELİ' },
+                  { mode: GameMode.KOZ_MACA, icon: <Spade size={20}/>, label: 'KOZ MAÇA' },
+                  { mode: GameMode.IHALESIZ, icon: <Flame size={20}/>, label: 'İHALESİZ' },
+                  { mode: GameMode.ESLI, icon: <ShieldCheck size={20}/>, label: 'EŞLİ' },
+                  { mode: GameMode.TEKLI, icon: <UserIcon size={20}/>, label: 'TEKLİ' },
+                  { mode: GameMode.UCLU, icon: <Layers size={20}/>, label: 'ÜÇLÜ' },
+                  { mode: GameMode.HIZLI, icon: <Zap size={20}/>, label: 'HIZLI' },
+                  { mode: GameMode.YERE_BATAK, icon: <Target size={20}/>, label: 'YERE' },
+                  { mode: GameMode.ACIK_KOZ, icon: <Award size={20}/>, label: 'AÇIK KOZ' },
+                  { mode: GameMode.CAPOT, icon: <Skull size={20}/>, label: 'CAPOT' },
+                  { mode: GameMode.KUMANDA, icon: <Trophy size={20}/>, label: 'KUMANDA' },
+                ].map(({ mode, icon, label }) => (
+                  <button 
+                    key={mode} 
+                    onClick={() => { setSelectedMode(mode); setPhase(GamePhase.RULES_SETUP); }}
+                    className={`group p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-1.5 active:scale-95 ${selectedMode === mode ? 'bg-emerald-500/20 border-emerald-400' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                  >
+                    <div className="w-9 h-9 bg-white/5 rounded-lg flex items-center justify-center text-emerald-400">{icon}</div>
+                    <span className="text-white font-black uppercase text-[8px] tracking-wide text-center">{label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Günlük Challenge - Kompakt */}
+              {userProfile.dailyChallenge && !userProfile.dailyChallenge.completed && (
+                <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl p-3 border border-purple-400/30 mb-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-white font-bold text-xs flex items-center gap-1"><Flame size={12} className="text-orange-400" /> {userProfile.dailyChallenge.title}</span>
+                    <span className="text-yellow-400 font-black text-xs">{userProfile.dailyChallenge.reward}🪙</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-purple-400 to-pink-400 rounded-full" style={{ width: `${Math.min((userProfile.dailyChallenge.progress / userProfile.dailyChallenge.target) * 100, 100)}%` }}/>
+                  </div>
+                </div>
+              )}
+
+              {/* Günün İlk Oyunu Bonusu */}
+              {isFirstGameOfDay() && !firstGameBonusClaimed && (
+                <button 
+                  onClick={handleFirstGameBonus}
+                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black py-3 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 mb-4 animate-pulse"
+                >
+                  <span className="text-lg">🎁</span>
+                  GÜNÜN İLK OYUNU = 15 DK REKLAMSIZ
+                </button>
+              )}
+
+              {/* Reklamsız Mod Göstergesi */}
+              {adFreeTimeLeft > 0 && (
+                <div className="bg-emerald-500/20 p-3 rounded-xl border border-emerald-400/30 mb-4 flex items-center justify-between">
+                  <span className="text-white font-bold text-xs flex items-center gap-2">🛡️ REKLAMSIZ</span>
+                  <span className="text-emerald-400 font-black text-sm">{formatRemainingTime(adFreeTimeLeft)}</span>
+                </div>
+              )}
+            </>
+          )}
+
+          {lobbyTab === 'daily' && (
+            <div className="space-y-3">
+              {/* Günlük Ödül */}
+              <button 
+                onClick={() => setShowDailyReward(true)}
+                className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-sm flex items-center justify-center gap-2"
+              >
+                <Trophy size={18} />
+                GÜNLÜK ÖDÜL ({getCurrentStreakDay(userProfile) || 1}/7)
+              </button>
+
+              {/* Görevler */}
+              <button 
+                onClick={() => setShowQuests(true)}
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-sm flex items-center justify-center gap-2"
+              >
+                <Target size={18} />
+                GÖREVLER
+              </button>
+
+              {/* Başarımlar */}
+              <button 
+                onClick={() => setShowAchievements(true)}
+                className="w-full bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-sm flex items-center justify-center gap-2"
+              >
+                <Award size={18} />
+                BAŞARIMLAR
+              </button>
+
+              {/* Liderlik */}
+              <button 
+                onClick={() => setShowLeaderboard(true)}
+                className="w-full bg-white/5 border border-white/10 text-white font-bold py-4 rounded-xl hover:bg-white/10 transition-all text-sm flex items-center justify-center gap-2"
+              >
+                <Trophy size={18} className="text-yellow-400" />
+                LİDERLİK TABLOSU
+              </button>
+
+              {/* Mini Oyunlar */}
+              <div className="grid grid-cols-2 gap-2 mt-4">
+                <button 
+                  onClick={() => { if (!guessGame || isGuessGameExpired(guessGame)) setGuessGame(generateGuessGame()); setShowGuessGame(true); }}
+                  className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 text-white font-bold py-3 rounded-xl text-xs flex flex-col items-center gap-1"
+                >
+                  <span className="text-xl">🎯</span>
+                  TAHMİN ET <span className="text-yellow-400 text-[10px]">+100🪙</span>
+                </button>
+                <button 
+                  onClick={() => { if (!quiz || isQuizExpired(quiz)) setQuiz(generateWeeklyQuiz()); setShowQuiz(true); }}
+                  className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/30 text-white font-bold py-3 rounded-xl text-xs flex flex-col items-center gap-1"
+                >
+                  <span className="text-xl">📝</span>
+                  HAFTALIK QUIZ <span className="text-yellow-400 text-[10px]">+250🪙</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {lobbyTab === 'shop' && (
+            <div className="space-y-3">
+              {/* Power-Up'lar */}
+              <button 
+                onClick={() => setShowPowerUps(true)}
+                className="w-full bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-400/30 text-white font-black py-4 rounded-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"
+              >
+                <Zap size={18} className="text-yellow-400" />
+                POWER-UP'LAR
+                {(userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount) > 0 && (
+                  <span className="bg-emerald-500 text-white text-[10px] px-2 py-0.5 rounded-full ml-1">
+                    {userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Tema Mağazası */}
+              <button 
+                onClick={() => setShowThemeShop(true)}
+                className="w-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 text-white font-black py-4 rounded-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"
+              >
+                <Palette size={18} className="text-purple-400" />
+                TEMA MAĞAZASI
+              </button>
+
+              {/* Reklam Seçenekleri */}
+              {adFreeTimeLeft === 0 && (
+                <>
+                  {canWatchRewardedAd() && (
+                    <button 
+                      onClick={() => handleWatchAd('adfree30')}
+                      disabled={adRewardPending !== null}
+                      className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      🎬 REKLAM İZLE = 30 DK REKLAMSIZ
+                    </button>
+                  )}
+                  {canWatchRewardedAd() && (
+                    <button 
+                      onClick={() => handleWatchAd('coins')}
+                      disabled={adRewardPending !== null}
+                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-3 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      🎬 REKLAM İZLE = 50 COİN <span className="text-white/60 text-[10px]">({getRemainingRewardedAds()} kaldı)</span>
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setShowAdFreeShop(true)}
+                    className="w-full bg-white/5 border border-white/10 text-white font-bold py-3 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
+                  >
+                    <Coins size={14} className="text-yellow-400" />
+                    COİN İLE REKLAMSIZ SATIN AL
+                  </button>
+                </>
+              )}
+
+              {/* Reklamsız durum */}
+              {adFreeTimeLeft > 0 && (
+                <div className="bg-emerald-500/20 p-4 rounded-xl border border-emerald-400/30 text-center">
+                  <span className="text-white font-bold text-sm">🛡️ REKLAMSIZ MOD AKTİF</span>
+                  <div className="text-emerald-400 font-black text-2xl mt-1">{formatRemainingTime(adFreeTimeLeft)}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Section - Tab Bar + Banner Ad */}
+      <div className="flex-shrink-0 absolute bottom-0 left-0 right-0 flex flex-col">
+        {/* Banner Ad Alanı - EN ALTTA (AdMob banner buraya render edilecek) */}
+        <div className="h-[50px] bg-black/40" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}></div>
         
-        <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-xl border border-white/5">
-                <Coins size={12} className="text-yellow-400"/><span className="text-yellow-500 font-black text-xs">{userProfile.coins.toLocaleString()}</span>
-            </div>
-            <button onClick={() => setShowThemeShop(true)} className="bg-white/10 hover:bg-white/20 p-2.5 rounded-xl text-white transition-all shadow-lg" title="Tema Mağazası"><Palette size={18}/></button>
-            <button onClick={() => setPhase(GamePhase.STATISTICS)} className="bg-white/10 hover:bg-white/20 p-2.5 rounded-xl text-white transition-all shadow-lg"><BarChart3 size={18}/></button>
-            <button onClick={() => setShowSettings(true)} className="bg-white/10 hover:bg-white/20 p-2.5 rounded-xl text-white transition-all shadow-lg"><Settings size={18}/></button>
-        </div>
-      </div>
-
-      <div className="text-center w-full px-6 py-4 flex-1 flex flex-col items-center justify-center">
-        <div className="flex items-center justify-center gap-2 mb-1">
-          <span className="text-emerald-400"><Spade size={14} /></span>
-          <span className="text-white/20 font-black text-[10px] uppercase tracking-[0.4em]">Legendary Card Game</span>
-        </div>
-        <h1 className="text-4xl sm:text-6xl md:text-8xl font-black text-white italic tracking-tighter leading-none uppercase select-none drop-shadow-2xl">
-          BATAK<span className="text-emerald-500">PRO</span>
-        </h1>
-      </div>
-
-      <div className="grid grid-cols-4 gap-2 sm:gap-3 w-full max-w-2xl mb-6">
-        {[
-          { mode: GameMode.IHALELI, icon: <Zap />, label: 'İHALELİ', desc: 'Klasik ihale' },
-          { mode: GameMode.KOZ_MACA, icon: <Spade />, label: 'KOZ MAÇA', desc: 'Koz her zaman ♠' },
-          { mode: GameMode.IHALESIZ, icon: <Flame />, label: 'İHALESİZ', desc: 'İhale yok' },
-          { mode: GameMode.ESLI, icon: <ShieldCheck />, label: 'EŞLİ', desc: 'Takım oyunu' },
-          { mode: GameMode.TEKLI, icon: <UserIcon />, label: 'TEKLİ', desc: '1v1 düello' },
-          { mode: GameMode.UCLU, icon: <Layers />, label: 'ÜÇLÜ', desc: '3 oyuncu' },
-          { mode: GameMode.HIZLI, icon: <Zap />, label: 'HIZLI', desc: '6 el' },
-          { mode: GameMode.YERE_BATAK, icon: <Target />, label: 'YERE', desc: 'Koz yere atılır' },
-          { mode: GameMode.ACIK_KOZ, icon: <Award />, label: 'AÇIK KOZ', desc: 'Koz açık' },
-          { mode: GameMode.CAPOT, icon: <Skull />, label: 'CAPOT', desc: 'Hiç el alma' },
-          { mode: GameMode.KUMANDA, icon: <Trophy />, label: 'KUMANDA', desc: 'Turnuva modu' },
-        ].map(({ mode, icon, label, desc }) => (
-          <button 
-            key={mode} 
-            onClick={() => { 
-              setSelectedMode(mode); 
-              setPhase(GamePhase.RULES_SETUP);
-            }}
-            className={`group p-4 sm:p-5 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 active:scale-95 ${selectedMode === mode ? 'bg-emerald-500/20 border-emerald-400 shadow-xl shadow-emerald-500/10' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
-          >
-            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/5 rounded-xl flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">{icon}</div>
-            <span className="text-white font-black uppercase text-[9px] sm:text-[10px] tracking-widest text-center leading-tight">{label}</span>
-          </button>
-        ))}
-      </div>
-      
-      {/* Günlük Ödül Butonu */}
-      <div className="w-full max-w-lg mb-4 flex gap-2">
-        <button 
-          onClick={() => {
-            setShowDailyReward(true);
-          }}
-          className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-black py-3 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-        >
-          <Trophy size={16} />
-          GÜNLÜK ÖDÜL ({getCurrentStreakDay(userProfile) || 1}/7)
-        </button>
-        <button 
-          onClick={() => setShowQuests(true)}
-          className="flex-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-black py-3 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-        >
-          <Target size={16} />
-          GÖREVLER
-        </button>
-        <button 
-          onClick={() => setShowAchievements(true)}
-          className="flex-1 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black py-3 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-        >
-          <Award size={16} />
-          BAŞARIMLAR
-        </button>
-      </div>
-      
-      {/* Son Oyun Özeti */}
-      {userProfile.lastGameResult && (
-        <div className="w-full max-w-lg mb-4 bg-white/5 rounded-2xl p-4 border border-white/10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${userProfile.lastGameResult.won ? 'bg-emerald-500' : 'bg-rose-500'}`}>
-                {userProfile.lastGameResult.won ? <Trophy size={20} className="text-white" /> : <Skull size={20} className="text-white" />}
-              </div>
-              <div>
-                <div className="text-white font-black text-sm">{userProfile.lastGameResult.won ? 'KAZANDIN!' : 'KAYBETTİN'}</div>
-                <div className="text-white/40 text-[10px]">{userProfile.lastGameResult.mode} - {userProfile.lastGameResult.tricksWon} el</div>
-              </div>
-            </div>
-            <div className={`font-black text-lg ${userProfile.lastGameResult.coinsEarned >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {userProfile.lastGameResult.coinsEarned >= 0 ? '+' : ''}{userProfile.lastGameResult.coinsEarned} 🪙
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Günlük Challenge */}
-      {userProfile.dailyChallenge && !userProfile.dailyChallenge.completed && (
-        <div className="w-full max-w-lg mb-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-2xl p-4 border border-purple-400/30">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Flame size={16} className="text-orange-400" />
-              <span className="text-white font-black text-xs uppercase">GÜNLÜK CHALLENGE</span>
-            </div>
-            <span className="text-yellow-400 font-black text-sm">{userProfile.dailyChallenge.reward} 🪙</span>
-          </div>
-          <div className="text-white text-sm font-bold mb-2">{userProfile.dailyChallenge.title}</div>
-          <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-purple-400 to-pink-400 rounded-full transition-all"
-              style={{ width: `${Math.min((userProfile.dailyChallenge.progress / userProfile.dailyChallenge.target) * 100, 100)}%` }}
-            />
-          </div>
-          <div className="text-white/40 text-[10px] mt-1">{userProfile.dailyChallenge.progress} / {userProfile.dailyChallenge.target}</div>
-        </div>
-      )}
-      
-      {/* Power-Up'lar ve Mini Oyunlar */}
-      <div className="w-full max-w-lg mb-4 grid grid-cols-2 gap-2">
-        <button 
-          onClick={() => setShowPowerUps(true)}
-          className="bg-white/5 border border-white/10 text-white font-bold py-2 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
-        >
-          <Zap size={14} className="text-yellow-400" />
-          POWER-UP'LAR
-          {(userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount) > 0 && (
-            <span className="bg-emerald-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
-              {userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount}
-            </span>
-          )}
-        </button>
-        <button 
-          onClick={() => setShowLeaderboard(true)}
-          className="bg-white/5 border border-white/10 text-white font-bold py-2 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
-        >
-          <Trophy size={14} className="text-yellow-400" />
-          LİDERLİK
-        </button>
-      </div>
-      
-      {/* Mini Oyunlar */}
-      <div className="w-full max-w-lg mb-4 grid grid-cols-2 gap-2">
-        <button 
-          onClick={() => {
-            if (!guessGame || isGuessGameExpired(guessGame)) {
-              setGuessGame(generateGuessGame());
-            }
-            setShowGuessGame(true);
-          }}
-          className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 text-white font-bold py-3 rounded-xl hover:from-purple-500/30 hover:to-pink-500/30 transition-all text-xs flex items-center justify-center gap-2"
-        >
-          <span className="text-lg">🎯</span>
-          TAHMİN ET
-          <span className="text-yellow-400 text-[10px]">+100🪙</span>
-        </button>
-        <button 
-          onClick={() => {
-            if (!quiz || isQuizExpired(quiz)) {
-              setQuiz(generateWeeklyQuiz());
-            }
-            setShowQuiz(true);
-          }}
-          className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/30 text-white font-bold py-3 rounded-xl hover:from-blue-500/30 hover:to-cyan-500/30 transition-all text-xs flex items-center justify-center gap-2"
-        >
-          <span className="text-lg">📝</span>
-          HAFTALIK QUIZ
-          <span className="text-yellow-400 text-[10px]">+250🪙</span>
-        </button>
-      </div>
-      
-      {/* Reklamsız Süre Göstergesi */}
-      {adFreeTimeLeft > 0 && (
-        <div className="w-full max-w-lg mb-4 bg-gradient-to-r from-emerald-500/20 to-green-500/20 p-4 rounded-2xl border border-emerald-400/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🛡️</span>
-              <div>
-                <div className="text-white font-black text-sm">REKLAMSIZ MOD</div>
-                <div className="text-emerald-400 text-xs">Kalan süre: {formatRemainingTime(adFreeTimeLeft)}</div>
-              </div>
-            </div>
-            <div className="text-3xl font-black text-emerald-400">{formatRemainingTime(adFreeTimeLeft)}</div>
-          </div>
-        </div>
-      )}
-      
-      {/* Günün İlk Oyunu Bonusu */}
-      {isFirstGameOfDay() && !firstGameBonusClaimed && (
-        <div className="w-full max-w-lg mb-4">
-          <button 
-            onClick={handleFirstGameBonus}
-            className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-3 animate-pulse"
-          >
-            <span className="text-2xl">🎁</span>
-            GÜNÜN İLK OYUNU = 15 DK REKLAMSIZ
-          </button>
-        </div>
-      )}
-      
-      {/* Reklam Butonları */}
-      {isAdReady && adFreeTimeLeft === 0 && (
-        <div className="w-full max-w-lg mb-4 space-y-2">
-          {/* 30 dk Reklamsız için izle */}
-          {canWatchRewardedAd() && (
+        {/* Tab Bar - Banner'ın ÜSTÜNDE */}
+        <div className="absolute bottom-[50px] left-0 right-0 bg-black/90 backdrop-blur-xl border-t border-white/10 px-4 py-2" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <div className="flex justify-around max-w-lg mx-auto">
             <button 
-              onClick={() => handleWatchAd('adfree30')}
-              disabled={adRewardPending !== null}
-              className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-3 disabled:opacity-50"
+              onClick={() => setLobbyTab('game')}
+              className={`flex flex-col items-center gap-0.5 px-6 py-1.5 rounded-xl transition-all ${lobbyTab === 'game' ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/50'}`}
             >
-              <span className="text-2xl">🎬</span>
-              REKLAM İZLE = 30 DK REKLAMSIZ
+              <Play size={18} />
+              <span className="text-[8px] font-bold uppercase">Oyna</span>
             </button>
-          )}
-          
-          {/* 50 Coin için izle */}
-          {canWatchRewardedAd() && (
             <button 
-              onClick={() => handleWatchAd('coins')}
-              disabled={adRewardPending !== null}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-3 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-3 disabled:opacity-50"
+              onClick={() => setLobbyTab('daily')}
+              className={`relative flex flex-col items-center gap-0.5 px-6 py-1.5 rounded-xl transition-all ${lobbyTab === 'daily' ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/50'}`}
             >
-              <span className="text-xl">🎬</span>
-              REKLAM İZLE = 50 COİN
-              <span className="text-white/60 text-[10px]">({getRemainingRewardedAds()} kaldı)</span>
+              <Trophy size={18} />
+              <span className="text-[8px] font-bold uppercase">Günlük</span>
+              {canClaimDailyReward(userProfile) && <span className="absolute top-0 right-4 w-2 h-2 bg-red-500 rounded-full"></span>}
             </button>
-          )}
-          
-          {/* Coin ile reklamsız satın al */}
-          <button 
-            onClick={() => setShowAdFreeShop(true)}
-            className="w-full bg-white/5 border border-white/10 text-white font-bold py-3 rounded-2xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
-          >
-            <Coins size={14} className="text-yellow-400" />
-            COİN İLE REKLAMSIZ SATIN AL
-          </button>
+            <button 
+              onClick={() => setLobbyTab('shop')}
+              className={`flex flex-col items-center gap-0.5 px-6 py-1.5 rounded-xl transition-all ${lobbyTab === 'shop' ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/50'}`}
+            >
+              <Coins size={18} />
+              <span className="text-[8px] font-bold uppercase">Dükkan</span>
+            </button>
+          </div>
         </div>
-      )}
-      
+      </div>
     </div>
   );
 
   const renderStatistics = () => (
-    <div className="w-full h-full flex flex-col items-center p-6 bg-[#020617] relative z-10 overflow-y-auto">
-        <div className="w-full max-w-md flex justify-between items-center mb-8">
-            <h2 className="text-2xl font-black text-white italic">İSTATİSTİKLER</h2>
-            <button onClick={() => setPhase(GamePhase.LOBBY)} className="p-2 bg-white/5 rounded-xl text-white/40"><X /></button>
+    <div className="w-full h-full flex flex-col items-center px-4 pt-14 pb-6 bg-[#020617] relative z-10 overflow-y-auto">
+        {/* Safe area için üst boşluk */}
+        <div className="w-full max-w-md flex justify-between items-center mb-6">
+            <h2 className="text-xl font-black text-white italic">İSTATİSTİKLER</h2>
+            <button onClick={() => setPhase(GamePhase.LOBBY)} className="p-2 bg-white/10 rounded-xl text-white/60 hover:bg-white/20"><X /></button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 w-full max-w-md">
+        <div className="grid grid-cols-2 gap-3 w-full max-w-md">
             {[
                 { icon: <Trophy className="text-yellow-400"/>, label: 'Toplam Galibiyet', value: userProfile.stats.totalWins, total: userProfile.stats.totalGames },
                 { icon: <Zap className="text-emerald-400"/>, label: 'Kazanılan İhale', value: userProfile.stats.totalBidsWon, total: userProfile.stats.totalBidsWon + userProfile.stats.totalBidsLost },
-                { icon: <Skull className="text-rose-400"/>, label: 'Batak Sayısı', value: userProfile.stats.totalBidsLost, color: 'text-rose-400' },
+                { icon: <Skull className="text-rose-400"/>, label: 'Batak Sayısı', value: userProfile.stats.totalBidsLost },
                 { icon: <Target className="text-blue-400"/>, label: 'En Yüksek İhale', value: userProfile.stats.maxBidRecord },
                 { icon: <TrendingUp className="text-orange-400"/>, label: 'Ortalama İhale', value: userProfile.stats.avgBid },
                 { icon: <Award className="text-purple-400"/>, label: 'Toplam El', value: userProfile.stats.totalTricks }
             ].map((stat, idx) => (
-                <div key={idx} className="bg-white/5 p-4 rounded-3xl border border-white/10 flex flex-col gap-2">
+                <div key={idx} className="bg-white/5 p-4 rounded-2xl border border-white/10 flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                         {stat.icon}
-                        {stat.total && <span className="text-[8px] text-white/20 font-black">%{Math.round((stat.value / stat.total) * 100)}</span>}
+                        {stat.total !== undefined && stat.total > 0 && (
+                          <span className="text-[8px] text-white/40 font-black">%{Math.round((stat.value / stat.total) * 100)}</span>
+                        )}
                     </div>
-                    <div className="text-2xl font-black text-white">{stat.value}</div>
-                    <div className="text-[8px] text-white/40 font-black uppercase tracking-wider">{stat.label}</div>
+                    <div className="text-2xl font-black text-emerald-400">{stat.value}</div>
+                    <div className="text-[9px] text-white/50 font-bold uppercase tracking-wider">{stat.label}</div>
                 </div>
             ))}
         </div>
@@ -1788,15 +1855,15 @@ const AppContent: React.FC = () => {
         )}
         
         {phase === GamePhase.RULES_SETUP && (
-          <div className="fixed inset-0 z-[800] bg-black/80 flex items-center justify-center p-6 animate-pop-in backdrop-blur-md">
-            <div className={`${themeStyles.bg} w-full max-sm:w-full max-w-sm rounded-[3rem] overflow-hidden border border-white/10 shadow-2xl`}>
-              <div className="bg-emerald-500 p-6 text-center shadow-lg flex items-center justify-between">
-                <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter flex-1">Kurallar</h2>
-                <button onClick={() => setPhase(GamePhase.LOBBY)} className="p-2 bg-white/20 rounded-xl text-white hover:bg-white/30 transition-all">
-                  <X size={20} />
+          <div className="fixed inset-0 z-[800] bg-black/90 flex items-center justify-center p-4 animate-pop-in backdrop-blur-md">
+            <div className={`${themeStyles.bg} w-full max-w-sm rounded-3xl overflow-hidden border border-white/10 shadow-2xl`}>
+              <div className="bg-emerald-500 px-4 py-3 flex items-center justify-between">
+                <h2 className="text-lg font-black text-white italic uppercase tracking-tight">Kurallar</h2>
+                <button onClick={() => setPhase(GamePhase.LOBBY)} className="p-1.5 bg-white/20 rounded-lg text-white hover:bg-white/30 transition-all">
+                  <X size={18} />
                 </button>
               </div>
-              <div className="p-8 space-y-3 max-h-[60vh] overflow-y-auto">
+              <div className="p-4 space-y-2">
                 {[
                   { key: 'ilkElKozYasak', label: 'İlk El Koz Yasak', desc: 'İlk elde koz atılamaz' },
                   { key: 'macaCezasi', label: 'Maça Cezası', desc: '0 el alana ek ceza' },
@@ -1805,17 +1872,17 @@ const AppContent: React.FC = () => {
                   { key: 'zorunluYukseltme', label: 'Zorunlu Yükseltme', desc: 'Daha yüksek kart atmalı' },
                   { key: 'bonusEl', label: 'Bonus El', desc: 'Son el +20 puan' },
                 ].map(({ key, label, desc }) => (
-                   <div key={key} className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5 cursor-pointer hover:bg-black/30 transition-all" onClick={() => setGameSettings(s => ({...s, houseRules: {...s.houseRules, [key]: !(s.houseRules as any)[key]}}))}>
-                      <div>
-                        <span className="text-white text-[11px] font-black uppercase tracking-wider block">{label}</span>
-                        <span className="text-white/40 text-[9px]">{desc}</span>
+                   <div key={key} className="flex justify-between items-center bg-black/20 px-3 py-2.5 rounded-xl border border-white/5 cursor-pointer hover:bg-black/30 transition-all" onClick={() => setGameSettings(s => ({...s, houseRules: {...s.houseRules, [key]: !(s.houseRules as any)[key]}}))}>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-white text-[10px] font-black uppercase tracking-wide block">{label}</span>
+                        <span className="text-white/40 text-[8px]">{desc}</span>
                       </div>
-                      <div className={`w-10 h-5 rounded-full transition-all relative ${ (gameSettings.houseRules as any)[key] ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ (gameSettings.houseRules as any)[key] ? 'translate-x-5' : '' }`}></div></div>
+                      <div className={`w-9 h-5 rounded-full transition-all relative flex-shrink-0 ml-2 ${ (gameSettings.houseRules as any)[key] ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ (gameSettings.houseRules as any)[key] ? 'translate-x-4' : '' }`}></div></div>
                    </div>
                 ))}
                 <button onClick={() => {
                   initGame();
-                }} className="w-full bg-white text-emerald-900 py-4 rounded-2xl font-black text-lg mt-4 shadow-xl active:scale-95 transition-all uppercase tracking-tighter">BAŞLA</button>
+                }} className="w-full bg-white text-emerald-900 py-3 rounded-xl font-black text-base mt-3 shadow-xl active:scale-95 transition-all uppercase tracking-tight">BAŞLA</button>
               </div>
             </div>
           </div>
@@ -1849,6 +1916,15 @@ const AppContent: React.FC = () => {
                      <span className="text-white text-[11px] font-black uppercase tracking-wider">TİTREŞİM</span>
                    </div>
                    <div className={`w-10 h-5 rounded-full transition-all relative ${ gameSettings.vibrationEnabled ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ gameSettings.vibrationEnabled ? 'translate-x-5' : '' }`}></div></div>
+                 </div>
+                 
+                 {/* BOT CHAT */}
+                 <div className="flex justify-between items-center bg-black/20 p-4 rounded-2xl border border-white/5 cursor-pointer hover:bg-black/30 transition-all" onClick={() => setGameSettings(s => ({...s, botChatEnabled: !s.botChatEnabled}))}>
+                   <div className="flex items-center gap-3">
+                     <MessageCircle size={18} className={gameSettings.botChatEnabled ? 'text-emerald-400' : 'text-white/20'}/>
+                     <span className="text-white text-[11px] font-black uppercase tracking-wider">BOT KONUŞMALARI</span>
+                   </div>
+                   <div className={`w-10 h-5 rounded-full transition-all relative ${ gameSettings.botChatEnabled ? 'bg-emerald-400' : 'bg-slate-700' }`}><div className={`w-4 h-4 bg-white rounded-full transition-all mt-0.5 ml-0.5 ${ gameSettings.botChatEnabled ? 'translate-x-5' : '' }`}></div></div>
                  </div>
 
                  {/* DIFFICULTY */}
@@ -2044,8 +2120,8 @@ const AppContent: React.FC = () => {
              )}
              
              {phase === GamePhase.BIDDING && isBidding && (
-                <div className="fixed inset-0 z-[400] bg-black/20 flex items-center justify-center p-6 transition-all duration-300 pointer-events-none">
-                  <div className={`bg-[#2d1a0a] p-8 rounded-[3rem] border border-white/10 w-full max-w-md text-center shadow-2xl animate-pop-in wood-border pointer-events-auto`}>
+                <div className="fixed inset-0 z-[600] bg-black/60 flex items-center justify-center p-6 transition-all duration-300">
+                  <div className={`bg-[#2d1a0a] p-6 rounded-[2rem] border border-white/10 w-full max-w-sm text-center shadow-2xl animate-pop-in wood-border`}>
                     <h2 className="text-2xl font-black text-white italic mb-2">İHALE</h2>
                     
                     {/* İhale Geçmişi */}
@@ -2062,10 +2138,17 @@ const AppContent: React.FC = () => {
                       </div>
                     )}
                     
-                    {biddingPlayerIdx === 0 ? (
-                      <>
-                        <div className="mb-4 text-white/60 text-sm">En Yüksek İhale: {highestBid > 0 ? highestBid : 'Yok'}</div>
-                    <div className="grid grid-cols-5 gap-2">
+                    {biddingPlayerIdx === 0 && players[0]?.currentBid !== -1 ? (
+                      players[0]?.currentBid === highestBid && highestBid > 0 ? (
+                        // Kullanıcı zaten en yüksek ihaleyi vermiş, bekliyor
+                        <div className="py-6">
+                          <div className="text-emerald-400 text-lg font-bold mb-2">En yüksek ihale sizde: {highestBid}</div>
+                          <div className="text-white/40 text-sm">Diğer oyuncuların cevabı bekleniyor...</div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mb-4 text-white/60 text-sm">En Yüksek İhale: {highestBid > 0 ? highestBid : 'Yok'}</div>
+                          <div className="grid grid-cols-5 gap-2">
                             {[4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(num => (
                               <button 
                                 key={num} 
@@ -2080,12 +2163,13 @@ const AppContent: React.FC = () => {
                                 {num}
                               </button>
                             ))}
-                    </div>
-                            <button onClick={() => makeBid(0, null)} className="w-full mt-2 bg-white/10 text-white font-black py-4 rounded-2xl hover:bg-white/20 transition-all uppercase tracking-widest">PAS</button>
-                      </>
+                          </div>
+                          <button onClick={() => makeBid(0, null)} className="w-full mt-3 bg-rose-500/20 border border-rose-500/50 text-rose-400 font-black py-3 rounded-2xl hover:bg-rose-500/30 transition-all uppercase tracking-widest">PAS GEÇ</button>
+                        </>
+                      )
                     ) : (
-                      <div className="py-8">
-                        <div className="text-white/60 text-lg mb-4">
+                      <div className="py-6">
+                        <div className="text-white/60 text-lg mb-2">
                           {players[biddingPlayerIdx]?.name} düşünüyor...
                         </div>
                         <div className="text-white/40 text-sm">En Yüksek İhale: {highestBid > 0 ? highestBid : 'Yok'}</div>
@@ -2114,57 +2198,52 @@ const AppContent: React.FC = () => {
                 </div>
              )}
 
-             {/* RESIZED AND REPOSITIONED SCOREBOARD */}
-             <div className="absolute top-4 left-2 z-[110] flex flex-col items-start scale-90 sm:scale-100 origin-left">
-                <button 
-                  onClick={() => setShowScoreboard(!showScoreboard)} 
-                  className={`flex items-center gap-2 bg-black/40 backdrop-blur-xl px-3 py-2 rounded-xl border border-white/10 text-white transition-all shadow-xl hover:bg-black/60 ${showScoreboard ? 'rounded-b-none border-b-0' : ''}`}
-                >
-                  <BarChart3 size={16} className="text-emerald-400" />
-                  <span className="text-[9px] font-black tracking-widest uppercase">SKORLAR</span>
-                  {showScoreboard ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                </button>
-                {showScoreboard && (
-                  <div className="bg-black/60 backdrop-blur-xl rounded-xl rounded-tl-none p-3 border border-white/10 border-t-0 text-white min-w-[140px] shadow-2xl animate-pop-in">
-                    {players.map(p => (
-                      <div key={p.id} className="flex justify-between items-center text-[10px] mb-1.5 last:mb-0 gap-3">
-                        <span className={`font-bold truncate flex-1 ${p.id === 0 ? 'text-emerald-400' : 'text-white/60'}`}>{p.name}</span>
-                        <span className="font-black bg-white/10 px-1.5 py-0.5 rounded text-[9px]">{p.tricksWon} / {p.currentBid}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-             </div>
-
-             <div className="absolute top-4 right-4 z-[100] flex gap-3">
-                <button onClick={() => setShowSettings(true)} className="w-12 h-12 bg-black/40 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/10 shadow-lg hover:bg-black/60"><Settings size={20}/></button>
-                <button onClick={() => setPhase(GamePhase.LOBBY)} className="w-12 h-12 bg-black/40 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/10 shadow-lg hover:bg-black/60"><Home size={20}/></button>
-             </div>
-
-             {/* El Sayısı ve Koz Göstergesi */}
-             <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-4 z-[100]">
-               <div className="bg-black/60 px-4 py-2 rounded-2xl flex items-center gap-3 border border-white/10">
-                 {/* Kalan El */}
-                 <div className="flex items-center gap-2">
-                   <span className="text-white/60 text-xs font-bold">EL</span>
-                   <span className="text-white font-black text-lg">{trickCount + 1}</span>
-                   <span className="text-white/40 text-xs">/ {selectedMode === GameMode.HIZLI ? 6 : 13}</span>
-                 </div>
-                 
-                 {/* Koz */}
-                 {trumpSuit && (
-                   <div className="flex items-center gap-2 border-l border-white/20 pl-3">
-                     <span className="text-white/60 text-xs font-bold">KOZ</span>
-                     <span className={`text-2xl ${trumpSuit === Suit.HEARTS || trumpSuit === Suit.DIAMONDS ? 'text-rose-500' : 'text-white'}`}>
-                       {trumpSuit}
-                     </span>
+             {/* Üst Bar - Sol: Skorlar, Sağ: Butonlar */}
+             <div className="absolute left-2 z-[110]" style={{ top: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))' }}>
+               {/* Sol - Skorlar */}
+               <div className="flex flex-col items-start">
+                 <button 
+                   onClick={() => setShowScoreboard(!showScoreboard)} 
+                   className={`flex items-center gap-1.5 bg-black/60 backdrop-blur-xl px-2 py-1.5 rounded-lg border border-white/10 text-white transition-all ${showScoreboard ? 'rounded-b-none border-b-0' : ''}`}
+                 >
+                   <BarChart3 size={14} className="text-emerald-400" />
+                   <ChevronDown size={10} className={`transition-transform ${showScoreboard ? 'rotate-180' : ''}`} />
+                 </button>
+                 {showScoreboard && (
+                   <div className="bg-black/80 backdrop-blur-xl rounded-lg rounded-tl-none p-2 border border-white/10 border-t-0 text-white min-w-[120px] shadow-2xl">
+                     {players.map(p => (
+                       <div key={p.id} className="flex justify-between items-center text-[9px] mb-1 last:mb-0 gap-2">
+                         <span className={`font-bold truncate ${p.id === 0 ? 'text-emerald-400' : 'text-white/60'}`}>{p.name}</span>
+                         <span className="font-black bg-white/10 px-1 py-0.5 rounded text-[8px]">{p.tricksWon}/{p.currentBid > 0 ? p.currentBid : '-'}</span>
+                       </div>
+                     ))}
                    </div>
                  )}
-                 
-                 {/* Mod */}
-                 <div className="flex items-center gap-1 border-l border-white/20 pl-3">
-                   <span className="text-emerald-400 text-[10px] font-black uppercase">{selectedMode}</span>
-                 </div>
+               </div>
+             </div>
+
+             {/* Sağ üst - Butonlar ve El/Koz Bilgisi */}
+             <div className="absolute right-2 z-[110] flex flex-col items-end gap-1.5" style={{ top: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))' }}>
+               {/* Butonlar */}
+               <div className="flex gap-1.5">
+                 <button onClick={() => setShowSettings(true)} className="w-8 h-8 bg-black/60 backdrop-blur-xl rounded-lg flex items-center justify-center text-white border border-white/10"><Settings size={14}/></button>
+                 <button onClick={() => setPhase(GamePhase.LOBBY)} className="w-8 h-8 bg-black/60 backdrop-blur-xl rounded-lg flex items-center justify-center text-white border border-white/10"><Home size={14}/></button>
+               </div>
+               
+               {/* El ve Koz Bilgisi - Butonların altında sabit */}
+               <div className="bg-black/60 px-2 py-1 rounded-lg flex items-center gap-1.5 border border-white/10">
+                 <span className="text-white font-black text-sm">{trickCount + 1}</span>
+                 <span className="text-white/40 text-[10px]">/{selectedMode === GameMode.HIZLI ? 6 : 13}</span>
+                 {trumpSuit && (
+                   <>
+                     <span className="text-white/30">|</span>
+                     <span className={`text-lg ${trumpSuit === Suit.HEARTS || trumpSuit === Suit.DIAMONDS ? 'text-rose-500' : 'text-white'}`}>
+                       {trumpSuit}
+                     </span>
+                   </>
+                 )}
+                 <span className="text-white/30">|</span>
+                 <span className="text-emerald-400 text-[8px] font-black uppercase">{selectedMode.replace('_', ' ')}</span>
                </div>
              </div>
              
@@ -2211,7 +2290,11 @@ const AppContent: React.FC = () => {
              </div>
 
              {players.filter(p => p.id !== 0).map(p => (
-               <div key={p.id} className={`absolute flex flex-col items-center transition-all ${p.position === 'top' ? 'top-8 inset-x-0' : p.position === 'left' ? 'left-4 top-[41.5%] -translate-y-1/2' : 'right-4 top-[41.5%] -translate-y-1/2'}`}>
+               <div 
+                 key={p.id} 
+                 className={`absolute flex flex-col items-center transition-all ${p.position === 'left' ? 'left-4 top-[41.5%] -translate-y-1/2' : p.position === 'right' ? 'right-4 top-[41.5%] -translate-y-1/2' : 'inset-x-0'}`}
+                 style={p.position === 'top' ? { top: 'calc(max(2.5rem, env(safe-area-inset-top, 2.5rem)) + 3rem)' } : undefined}
+               >
                   {botMessages[p.id] && (
                     <div className={`absolute -top-14 bg-white text-emerald-900 px-4 py-2 rounded-2xl shadow-xl border-2 border-emerald-400 max-w-[150px] whitespace-normal z-[200] animate-pop-in ${p.position === 'right' ? 'right-0' : p.position === 'left' ? 'left-0' : 'left-1/2 -translate-x-1/2'}`}>
                       <span className="text-[9px] font-black italic block leading-tight">{botMessages[p.id]}</span>
@@ -2240,30 +2323,31 @@ const AppContent: React.FC = () => {
                </div>
              ))}
 
-             <div className={`absolute bottom-6 inset-x-0 flex flex-col items-center ${phase === GamePhase.BIDDING && isBidding ? 'z-[500]' : 'z-[50]'}`}>
-                <div className={`relative mb-6 flex flex-col items-center ${gameSettings.theme === 'kiraathane' ? 'scale-110' : ''}`}>
+             {/* Kullanıcı kartları - Banner ads için yukarı taşındı */}
+             <div className="absolute bottom-20 inset-x-0 flex flex-col items-center z-[50]">
+                <div className={`relative mb-4 flex flex-col items-center ${gameSettings.theme === 'kiraathane' ? 'scale-100' : ''}`}>
                    {gameSettings.theme === 'kiraathane' && (
-                     <div className="absolute inset-x-[-40px] inset-y-[-10px] bg-gradient-to-b from-[#8b4513] to-[#451a03] rounded-[2.5rem] wood-border -z-10 shadow-2xl"></div>
+                     <div className="absolute inset-x-[-30px] inset-y-[-8px] bg-gradient-to-b from-[#8b4513] to-[#451a03] rounded-[2rem] wood-border -z-10 shadow-2xl"></div>
                    )}
                    <div className="relative">
-                       <div className="absolute -top-4 -left-4 w-12 h-12 bg-emerald-600 rounded-full border-2 border-white flex items-center justify-center text-sm font-black text-white shadow-xl z-20">
+                       <div className="absolute -top-3 -left-3 w-10 h-10 bg-emerald-600 rounded-full border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl z-20">
                           {players[0]?.tricksWon}
                        </div>
-                       <div className={`w-16 h-16 rounded-full border-4 flex items-center justify-center bg-black/60 backdrop-blur-lg shadow-2xl transition-all ${currentPlayerIdx === 0 && !isBidding ? 'border-emerald-400 scale-110 shadow-emerald-500/20' : 'border-white/5'}`}>
+                       <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 flex items-center justify-center bg-black/60 backdrop-blur-lg shadow-2xl transition-all ${currentPlayerIdx === 0 && !isBidding ? 'border-emerald-400 scale-110 shadow-emerald-500/20' : 'border-white/5'}`}>
                           <UserIcon size={24} className={currentPlayerIdx === 0 && !isBidding ? 'text-emerald-400' : 'text-white/20'} />
                        </div>
                    </div>
-                   <span className="text-white font-black text-[11px] uppercase mt-2 tracking-widest">{userProfile.username}</span>
+                   <span className="text-white font-black text-[10px] uppercase mt-1 tracking-widest">{userProfile.username}</span>
                 </div>
                 
-                <div className="flex flex-col gap-[-45px] items-center">
-                   <div className="flex justify-center -space-x-12 mb-[-65px]">
+                <div className="flex flex-col gap-[-40px] items-center">
+                   <div className="flex justify-center -space-x-11 mb-[-60px]">
                       {players[0]?.hand.slice(0, 7).map(card => {
                         const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
                         return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105" />
                       })}
                    </div>
-                   <div className="flex justify-center -space-x-12 z-[60]">
+                   <div className="flex justify-center -space-x-11 z-[60]">
                       {players[0]?.hand.slice(7).map(card => {
                         const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
                         return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105" />
@@ -2271,6 +2355,9 @@ const AppContent: React.FC = () => {
                    </div>
                 </div>
              </div>
+             
+             {/* Banner Ad Alanı - Oyun ekranı */}
+             <div className="absolute bottom-0 left-0 right-0 h-[50px] bg-black/30 z-[40]" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}></div>
 
              {message && (
                <div className="fixed inset-0 z-[1000] flex items-center justify-center pointer-events-none">
@@ -2284,38 +2371,28 @@ const AppContent: React.FC = () => {
 
         {/* Günlük Ödül Modal */}
         {showDailyReward && (
-          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
-            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl relative overflow-hidden`}>
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-4 backdrop-blur-xl">
+            <div className={`${themeStyles.bg} w-full max-w-sm rounded-3xl p-5 border border-white/10 shadow-2xl relative overflow-hidden`}>
               {/* Arka plan efekti */}
               <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 via-orange-500/5 to-transparent pointer-events-none"></div>
               
               <div className="relative z-10">
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex justify-between items-center mb-4">
                   <div>
-                    <h2 className="text-3xl font-black text-white italic mb-1">GÜNLÜK ÖDÜL</h2>
-                    <div className="flex items-center gap-2">
-                      <div className="text-emerald-400 font-bold text-sm">Gün {getCurrentStreakDay(userProfile) || 1}/7</div>
-                      {userProfile.streakDays >= 7 && (
-                        <div className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full text-[8px] font-black uppercase">🔥 STREAK!</div>
-                      )}
-                    </div>
+                    <h2 className="text-xl font-black text-white italic">GÜNLÜK ÖDÜL</h2>
+                    <div className="text-emerald-400 font-bold text-xs">Gün {getCurrentStreakDay(userProfile) || 1}/7</div>
                   </div>
-                  <button onClick={() => setShowDailyReward(false)} className="bg-white/5 p-2 rounded-xl text-white/40 hover:bg-white/10 transition-all"><X size={20}/></button>
+                  <button onClick={() => setShowDailyReward(false)} className="bg-white/5 p-2 rounded-xl text-white/40 hover:bg-white/10 transition-all"><X size={18}/></button>
                 </div>
                 
                 {canClaimDailyReward(userProfile) ? (
                   <>
-                    <div className="text-center mb-6 p-6 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-3xl border-2 border-yellow-400/50">
-                      <div className="text-5xl font-black text-yellow-400 mb-2 flex items-center justify-center gap-2">
-                        <Coins size={40} className="text-yellow-400" />
+                    <div className="text-center mb-4 p-4 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-2xl border-2 border-yellow-400/50">
+                      <div className="text-4xl font-black text-yellow-400 flex items-center justify-center gap-2">
+                        <Coins size={32} className="text-yellow-400" />
                         +{getDailyRewards()[Math.min(Math.max(0, (getCurrentStreakDay(userProfile) || 1) - 1), 6)].coins}
                       </div>
-                      {(getCurrentStreakDay(userProfile) || 1) === 7 && (
-                        <div className="text-lg font-black text-yellow-300 mt-2">
-                          +{COINS_REWARDS.STREAK_BONUS} Bonus! 🎉
-                        </div>
-                      )}
-                      <div className="text-white/60 text-xs mt-2">Toplam: {getDailyRewards()[Math.min(Math.max(0, (getCurrentStreakDay(userProfile) || 1) - 1), 6)].coins + ((getCurrentStreakDay(userProfile) || 1) === 7 ? COINS_REWARDS.STREAK_BONUS : 0)} Coins</div>
+                      <div className="text-white/60 text-[10px] mt-1">Toplam: {getDailyRewards()[Math.min(Math.max(0, (getCurrentStreakDay(userProfile) || 1) - 1), 6)].coins} Coins</div>
                     </div>
                     
                     <button 
@@ -2326,72 +2403,55 @@ const AppContent: React.FC = () => {
                           setTimeout(() => setShowDailyReward(false), 2000);
                         }
                       }}
-                      className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-black py-5 rounded-2xl shadow-2xl hover:scale-105 transition-all uppercase tracking-widest text-lg mb-6 relative overflow-hidden group"
+                      className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-black py-3 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-sm mb-4 flex items-center justify-center gap-2"
                     >
-                      <span className="relative z-10 flex items-center justify-center gap-2">
-                        <Trophy size={20} />
-                        ÖDÜLÜ AL
-                      </span>
-                      <div className="absolute inset-0 bg-gradient-to-r from-yellow-400 to-orange-400 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                      <Trophy size={18} />
+                      ÖDÜLÜ AL
                     </button>
                   </>
                 ) : (
-                  <div className="text-center mb-6 p-6 bg-white/5 rounded-3xl border border-white/10">
-                    <div className="text-2xl mb-2">✅</div>
-                    <div className="text-white/60 font-bold">Bugünkü ödülün zaten alındı!</div>
-                    <div className="text-white/40 text-xs mt-2">Yarın tekrar gel!</div>
+                  <div className="text-center mb-4 p-4 bg-white/5 rounded-2xl border border-white/10">
+                    <div className="text-2xl mb-1">✅</div>
+                    <div className="text-white/60 font-bold text-sm">Bugünkü ödül alındı!</div>
+                    <div className="text-white/40 text-[10px] mt-1">Yarın tekrar gel!</div>
                   </div>
                 )}
                 
-                <div className="space-y-3">
-                  <div className="text-[10px] font-black text-white/40 uppercase tracking-widest text-center mb-2">7 GÜNLÜK STREAK</div>
-                  <div className="grid grid-cols-7 gap-2">
+                <div>
+                  <div className="text-[9px] font-black text-white/40 uppercase tracking-wide text-center mb-2">7 GÜNLÜK STREAK</div>
+                  <div className="grid grid-cols-7 gap-1">
                     {getDailyRewards().map((reward, idx) => {
                       const day = idx + 1;
                       const isClaimed = userProfile.dailyRewards[idx]?.claimed || false;
                       const currentDay = getCurrentStreakDay(userProfile) || 1;
                       const isToday = day === currentDay && canClaimDailyReward(userProfile);
                       const isPast = day < currentDay;
-                      const isFuture = day > currentDay;
                       
                       return (
                         <div 
                           key={day}
-                          className={`p-3 rounded-xl border-2 text-center transition-all relative ${
+                          className={`py-2 px-1 rounded-lg border text-center transition-all ${
                             isClaimed 
-                              ? 'bg-emerald-500/30 border-emerald-400 shadow-lg shadow-emerald-500/20' 
+                              ? 'bg-emerald-500/30 border-emerald-400' 
                               : isToday 
-                                ? 'bg-yellow-500/30 border-yellow-400 shadow-lg shadow-yellow-500/20 scale-105 animate-pulse' 
+                                ? 'bg-yellow-500/30 border-yellow-400' 
                                 : isPast
                                   ? 'bg-white/5 border-white/10 opacity-50'
                                   : 'bg-white/5 border-white/10'
                           }`}
                         >
-                          {isClaimed && (
-                            <div className="absolute -top-1 -right-1 bg-emerald-500 rounded-full p-1">
-                              <Check size={10} className="text-white" />
-                            </div>
-                          )}
-                          {isToday && (
-                            <div className="absolute -top-1 -left-1 bg-yellow-500 rounded-full w-3 h-3 animate-ping"></div>
-                          )}
-                          <div className={`text-xs font-black mb-1 ${isClaimed ? 'text-emerald-300' : isToday ? 'text-yellow-300' : 'text-white/60'}`}>
-                            Gün {day}
+                          <div className={`text-[8px] font-bold ${isClaimed ? 'text-emerald-300' : isToday ? 'text-yellow-300' : 'text-white/50'}`}>
+                            {day}
                           </div>
-                          <div className={`text-xl font-black ${isClaimed ? 'text-emerald-400' : isToday ? 'text-yellow-400' : 'text-yellow-400/60'}`}>
+                          <div className={`text-sm font-black ${isClaimed ? 'text-emerald-400' : isToday ? 'text-yellow-400' : 'text-yellow-400/60'}`}>
                             {reward.coins}
                           </div>
                           {day === 7 && (
-                            <div className="text-[7px] text-emerald-400 font-black mt-1 bg-emerald-500/20 px-1 py-0.5 rounded">BONUS</div>
+                            <div className="text-[6px] text-emerald-400 font-bold">BONUS</div>
                           )}
                         </div>
                       );
                     })}
-                  </div>
-                  <div className="text-center text-white/40 text-[9px] mt-2">
-                    {userProfile.streakDays > 0 && (
-                      <span>🔥 {userProfile.streakDays} günlük streak devam ediyor!</span>
-                    )}
                   </div>
                 </div>
               </div>
@@ -2812,16 +2872,16 @@ const AppContent: React.FC = () => {
 
         {/* Profil Düzenleme Modal */}
         {showProfileEdit && (
-          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
-            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl`}>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-black text-white italic">PROFİL DÜZENLE</h2>
-                <button onClick={() => setShowProfileEdit(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-4 backdrop-blur-xl">
+            <div className={`${themeStyles.bg} w-full max-w-sm rounded-2xl p-6 border border-white/10 shadow-2xl`}>
+              <div className="flex justify-between items-center mb-5">
+                <h2 className="text-xl font-black text-white italic">PROFİL DÜZENLE</h2>
+                <button onClick={() => setShowProfileEdit(false)} className="bg-white/5 p-2 rounded-lg text-white/40 hover:bg-white/10"><X size={18}/></button>
               </div>
               
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div>
-                  <label className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] mb-2 block">KULLANICI ADI</label>
+                  <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-2 block">KULLANICI ADI</label>
                   <input
                     type="text"
                     value={userProfile.username}
@@ -2833,14 +2893,14 @@ const AppContent: React.FC = () => {
                         return updated;
                       });
                     }}
-                    className="w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-white font-black text-sm focus:outline-none focus:border-emerald-400 transition-all"
+                    className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-emerald-400 transition-all"
                     placeholder="Kullanıcı adınız"
                   />
                 </div>
                 
                 <div>
-                  <label className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] mb-2 block">AVATAR</label>
-                  <div className="grid grid-cols-6 gap-2">
+                  <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-2 block">AVATAR</label>
+                  <div className="grid grid-cols-6 gap-1.5">
                     {['👤', '🎮', '👑', '🎯', '🃏', '⭐', '🔥', '💎', '🏆', '🎲', '⚡', '🌟'].map((emoji, idx) => (
                       <button
                         key={idx}
@@ -2851,10 +2911,10 @@ const AppContent: React.FC = () => {
                             return updated;
                           });
                         }}
-                        className={`p-3 rounded-xl border-2 text-2xl transition-all ${
+                        className={`aspect-square flex items-center justify-center rounded-lg border-2 text-xl transition-all ${
                           userProfile.avatarId === emoji
-                            ? 'border-emerald-400 bg-emerald-500/20 scale-110'
-                            : 'border-white/10 bg-black/20 hover:border-white/20'
+                            ? 'border-emerald-400 bg-emerald-500/20'
+                            : 'border-white/10 bg-black/20 hover:border-white/30'
                         }`}
                       >
                         {emoji}
@@ -2865,7 +2925,7 @@ const AppContent: React.FC = () => {
                 
                 <button 
                   onClick={() => setShowProfileEdit(false)}
-                  className="w-full bg-emerald-500 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest hover:bg-emerald-400 transition-all"
+                  className="w-full bg-emerald-500 text-white font-black py-3.5 rounded-xl shadow-xl uppercase tracking-wide text-sm hover:bg-emerald-400 transition-all"
                 >
                   KAYDET
                 </button>
@@ -2966,7 +3026,7 @@ const AppContent: React.FC = () => {
                         onClick={() => {
                           const coins = claimPremiumDailyCoins();
                           if (coins > 0) {
-                            setCoins(prev => prev + coins);
+                            setUserProfile(prev => ({ ...prev, coins: prev.coins + coins }));
                             setMessage(`+${coins} bonus coin alındı! 🪙`);
                             setTimeout(() => setMessage(null), 3000);
                           }

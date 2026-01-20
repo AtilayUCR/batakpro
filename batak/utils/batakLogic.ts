@@ -342,39 +342,43 @@ export const getBotBid = (
   const handValue = evaluateHand(hand);
   const baseBid = Math.max(4, Math.min(13, handValue + Math.floor(Math.random() * 3) - 1));
   
+  // Minimum ihale: currentHighestBid + 1 (ihale her zaman artırılmalı)
+  const minBid = currentHighestBid > 0 ? currentHighestBid + 1 : 4;
+  
+  // 13'ten fazla ihale yapılamaz
+  if (minBid > 13) return null;
+  
   if (difficulty === Difficulty.EASY) {
     // Acemi: Düşük ihaleler, çabuk pas
-    if (baseBid < 6 || currentHighestBid >= baseBid + 2) return null;
-    return Math.max(4, baseBid - 1);
+    if (minBid > baseBid) return null;
+    return minBid;
   }
   
   if (difficulty === Difficulty.MEDIUM) {
     // Oyuncu: Orta seviye ihaleler
-    if (currentHighestBid >= baseBid + 1) return null;
-    return baseBid;
+    if (minBid > baseBid + 1) return null;
+    return minBid;
   }
   
   if (difficulty === Difficulty.HARD) {
     // Usta: Daha agresif
-    if (currentHighestBid >= baseBid + 2) return null;
-    return Math.max(currentHighestBid + 1, baseBid);
+    if (minBid > baseBid + 2) return null;
+    return minBid;
   }
   
   if (difficulty === Difficulty.LEGEND) {
     // Efsane: Çok agresif, blöf yapabilir
-    const aggressiveBid = Math.max(currentHighestBid + 1, baseBid + Math.floor(Math.random() * 2));
-    if (aggressiveBid > 13) return null;
-    return aggressiveBid;
+    if (minBid > baseBid + 3) return null;
+    return minBid;
   }
   
   if (difficulty === Difficulty.INVINCIBLE) {
     // Yenilmez: Maksimum agresiflik
-    const maxBid = Math.max(currentHighestBid + 1, baseBid + 1);
-    if (maxBid > 13) return null;
-    return maxBid;
+    if (minBid > baseBid + 4) return null;
+    return minBid;
   }
   
-  return baseBid;
+  return minBid;
 };
 
 export const calculateRoundScore = (

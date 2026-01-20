@@ -212,4 +212,5 @@ export interface GameSettings {
   soundEnabled: boolean;
   soundPack: SoundPack;
   vibrationEnabled: boolean;
+  botChatEnabled: boolean; // Bot mesajları gösterilsin mi
 }
