@@ -221,7 +221,7 @@ const AppContent: React.FC = () => {
     soundEnabled: true,
     soundPack: 'arcade',
     vibrationEnabled: true,
-    botChatEnabled: true, // Botların konuşması
+    botChatEnabled: false, // Botların konuşması - varsayılan kapalı
   });
 
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
@@ -532,8 +532,12 @@ const AppContent: React.FC = () => {
     if (!gameSettings.soundEnabled) return;
     const audio = audioRefs.current[key];
     if (audio) {
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
+      // Yeni bir audio klonu oluştur - kesinti önlemek için
+      const clone = audio.cloneNode() as HTMLAudioElement;
+      clone.volume = audio.volume;
+      clone.play().catch(() => {});
+      // Çalma bittikten sonra temizle
+      clone.onended = () => clone.remove();
     }
   };
 
@@ -1327,28 +1331,28 @@ const AppContent: React.FC = () => {
           {/* Tab Content */}
           {lobbyTab === 'game' && (
             <>
-              {/* Oyun Modları */}
-              <div className="grid grid-cols-4 gap-2 mb-4">
+              {/* Oyun Modları - Büyütülmüş */}
+              <div className="grid grid-cols-4 gap-3 mb-4">
                 {[
-                  { mode: GameMode.IHALELI, icon: <Zap size={20}/>, label: 'İHALELİ' },
-                  { mode: GameMode.KOZ_MACA, icon: <Spade size={20}/>, label: 'KOZ MAÇA' },
-                  { mode: GameMode.IHALESIZ, icon: <Flame size={20}/>, label: 'İHALESİZ' },
-                  { mode: GameMode.ESLI, icon: <ShieldCheck size={20}/>, label: 'EŞLİ' },
-                  { mode: GameMode.TEKLI, icon: <UserIcon size={20}/>, label: 'TEKLİ' },
-                  { mode: GameMode.UCLU, icon: <Layers size={20}/>, label: 'ÜÇLÜ' },
-                  { mode: GameMode.HIZLI, icon: <Zap size={20}/>, label: 'HIZLI' },
-                  { mode: GameMode.YERE_BATAK, icon: <Target size={20}/>, label: 'YERE' },
-                  { mode: GameMode.ACIK_KOZ, icon: <Award size={20}/>, label: 'AÇIK KOZ' },
-                  { mode: GameMode.CAPOT, icon: <Skull size={20}/>, label: 'CAPOT' },
-                  { mode: GameMode.KUMANDA, icon: <Trophy size={20}/>, label: 'KUMANDA' },
+                  { mode: GameMode.IHALELI, icon: <Zap size={24}/>, label: 'İHALELİ' },
+                  { mode: GameMode.KOZ_MACA, icon: <Spade size={24}/>, label: 'KOZ MAÇA' },
+                  { mode: GameMode.IHALESIZ, icon: <Flame size={24}/>, label: 'İHALESİZ' },
+                  { mode: GameMode.ESLI, icon: <ShieldCheck size={24}/>, label: 'EŞLİ' },
+                  { mode: GameMode.TEKLI, icon: <UserIcon size={24}/>, label: 'TEKLİ' },
+                  { mode: GameMode.UCLU, icon: <Layers size={24}/>, label: 'ÜÇLÜ' },
+                  { mode: GameMode.HIZLI, icon: <Zap size={24}/>, label: 'HIZLI' },
+                  { mode: GameMode.YERE_BATAK, icon: <Target size={24}/>, label: 'YERE' },
+                  { mode: GameMode.ACIK_KOZ, icon: <Award size={24}/>, label: 'AÇIK KOZ' },
+                  { mode: GameMode.CAPOT, icon: <Skull size={24}/>, label: 'CAPOT' },
+                  { mode: GameMode.KUMANDA, icon: <Trophy size={24}/>, label: 'KUMANDA' },
                 ].map(({ mode, icon, label }) => (
                   <button 
                     key={mode} 
                     onClick={() => { setSelectedMode(mode); setPhase(GamePhase.RULES_SETUP); }}
-                    className={`group p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-1.5 active:scale-95 ${selectedMode === mode ? 'bg-emerald-500/20 border-emerald-400' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                    className={`group p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 active:scale-95 ${selectedMode === mode ? 'bg-emerald-500/20 border-emerald-400' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
                   >
-                    <div className="w-9 h-9 bg-white/5 rounded-lg flex items-center justify-center text-emerald-400">{icon}</div>
-                    <span className="text-white font-black uppercase text-[8px] tracking-wide text-center">{label}</span>
+                    <div className="w-11 h-11 bg-white/5 rounded-xl flex items-center justify-center text-emerald-400">{icon}</div>
+                    <span className="text-white font-black uppercase text-[9px] tracking-wide text-center">{label}</span>
                   </button>
                 ))}
               </div>
@@ -2230,20 +2234,20 @@ const AppContent: React.FC = () => {
                  <button onClick={() => setPhase(GamePhase.LOBBY)} className="w-8 h-8 bg-black/60 backdrop-blur-xl rounded-lg flex items-center justify-center text-white border border-white/10"><Home size={14}/></button>
                </div>
                
-               {/* El ve Koz Bilgisi - Butonların altında sabit */}
-               <div className="bg-black/60 px-2 py-1 rounded-lg flex items-center gap-1.5 border border-white/10">
-                 <span className="text-white font-black text-sm">{trickCount + 1}</span>
-                 <span className="text-white/40 text-[10px]">/{selectedMode === GameMode.HIZLI ? 6 : 13}</span>
+               {/* El ve Koz Bilgisi - Butonların altında sabit, daha küçük */}
+               <div className="bg-black/60 px-1.5 py-0.5 rounded-md flex items-center gap-1 border border-white/10 mt-1">
+                 <span className="text-white font-black text-xs">{trickCount + 1}</span>
+                 <span className="text-white/40 text-[8px]">/{selectedMode === GameMode.HIZLI ? 6 : 13}</span>
                  {trumpSuit && (
                    <>
-                     <span className="text-white/30">|</span>
-                     <span className={`text-lg ${trumpSuit === Suit.HEARTS || trumpSuit === Suit.DIAMONDS ? 'text-rose-500' : 'text-white'}`}>
+                     <span className="text-white/20">|</span>
+                     <span className={`text-sm ${trumpSuit === Suit.HEARTS || trumpSuit === Suit.DIAMONDS ? 'text-rose-500' : 'text-white'}`}>
                        {trumpSuit}
                      </span>
                    </>
                  )}
-                 <span className="text-white/30">|</span>
-                 <span className="text-emerald-400 text-[8px] font-black uppercase">{selectedMode.replace('_', ' ')}</span>
+                 <span className="text-white/20">|</span>
+                 <span className="text-emerald-400 text-[7px] font-black uppercase">{selectedMode.replace('_', ' ')}</span>
                </div>
              </div>
              
@@ -2308,15 +2312,15 @@ const AppContent: React.FC = () => {
                       )}
 
                       <div className="relative">
-                          <div className={`absolute -top-3 -left-3 w-10 h-10 bg-emerald-600 rounded-full border-2 border-white/40 flex items-center justify-center text-xs font-black text-white shadow-xl z-20 animate-pop-in`}>
+                          <div className={`absolute -top-2 -left-2 w-8 h-8 bg-emerald-600 rounded-full border-2 border-white/40 flex items-center justify-center text-[10px] font-black text-white shadow-xl z-20 animate-pop-in`}>
                             {p.tricksWon}
                           </div>
-                          <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 flex items-center justify-center bg-black/60 backdrop-blur-lg shadow-2xl transition-all ${currentPlayerIdx === p.id && !isBidding ? 'border-emerald-400 scale-110 shadow-emerald-500/20' : 'border-white/5 opacity-80'}`}>
-                            <UserIcon size={24} className={currentPlayerIdx === p.id && !isBidding ? 'text-emerald-400' : 'text-white/20'} />
+                          <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full border-3 flex items-center justify-center bg-black/60 backdrop-blur-lg shadow-2xl transition-all ${currentPlayerIdx === p.id && !isBidding ? 'border-emerald-400 scale-110 shadow-emerald-500/20' : 'border-white/5 opacity-80'}`}>
+                            <UserIcon size={20} className={currentPlayerIdx === p.id && !isBidding ? 'text-emerald-400' : 'text-white/20'} />
                           </div>
                       </div>
                       
-                      <span className={`text-white font-black text-[10px] uppercase mt-3 tracking-wider text-center ${gameSettings.theme === 'kiraathane' ? '' : 'bg-black/20 px-3 py-1 rounded-lg backdrop-blur shadow-sm'}`}>
+                      <span className={`text-white font-black text-[9px] uppercase mt-2 tracking-wider text-center ${gameSettings.theme === 'kiraathane' ? '' : 'bg-black/20 px-2 py-0.5 rounded-lg backdrop-blur shadow-sm'}`}>
                         {p.name}
                       </span>
                   </div>
@@ -2330,14 +2334,14 @@ const AppContent: React.FC = () => {
                      <div className="absolute inset-x-[-30px] inset-y-[-8px] bg-gradient-to-b from-[#8b4513] to-[#451a03] rounded-[2rem] wood-border -z-10 shadow-2xl"></div>
                    )}
                    <div className="relative">
-                       <div className="absolute -top-3 -left-3 w-10 h-10 bg-emerald-600 rounded-full border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl z-20">
+                       <div className="absolute -top-2 -left-2 w-8 h-8 bg-emerald-600 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-black text-white shadow-xl z-20">
                           {players[0]?.tricksWon}
                        </div>
-                       <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 flex items-center justify-center bg-black/60 backdrop-blur-lg shadow-2xl transition-all ${currentPlayerIdx === 0 && !isBidding ? 'border-emerald-400 scale-110 shadow-emerald-500/20' : 'border-white/5'}`}>
-                          <UserIcon size={24} className={currentPlayerIdx === 0 && !isBidding ? 'text-emerald-400' : 'text-white/20'} />
+                       <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full border-3 flex items-center justify-center bg-black/60 backdrop-blur-lg shadow-2xl transition-all ${currentPlayerIdx === 0 && !isBidding ? 'border-emerald-400 scale-110 shadow-emerald-500/20' : 'border-white/5'}`}>
+                          <UserIcon size={20} className={currentPlayerIdx === 0 && !isBidding ? 'text-emerald-400' : 'text-white/20'} />
                        </div>
                    </div>
-                   <span className="text-white font-black text-[10px] uppercase mt-1 tracking-widest">{userProfile.username}</span>
+                   <span className="text-white font-black text-[9px] uppercase mt-2 tracking-widest">{userProfile.username}</span>
                 </div>
                 
                 <div className="flex flex-col gap-[-40px] items-center">
