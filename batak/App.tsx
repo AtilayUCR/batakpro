@@ -52,6 +52,10 @@ import {
 } from './utils/analyticsSystem';
 import { initializeCrashlytics, logGameState, setUserId as setCrashlyticsUserId } from './utils/crashlyticsSystem';
 import { initializePushNotifications, getFCMToken } from './utils/pushNotificationSystem';
+import { 
+  shouldShowRatingPrompt, handleRatingResponse, recordWin, 
+  shouldShowAfterBatak, RatingResponse 
+} from './utils/ratingSystem';
 
 // --- AUDIO HELPERS ---
 const SOUND_PACKS: Record<SoundPack, { deal: string; play: string }> = {
@@ -229,6 +233,8 @@ const AppContent: React.FC = () => {
   const [showQuests, setShowQuests] = useState<boolean>(false);
   const [showAchievements, setShowAchievements] = useState<boolean>(false);
   const [showThemeShop, setShowThemeShop] = useState<boolean>(false);
+  const [showRatingPrompt, setShowRatingPrompt] = useState<boolean>(false);
+  const [ratingContext, setRatingContext] = useState<'win' | 'batak' | 'level' | 'streak'>('win');
   const [showProfileEdit, setShowProfileEdit] = useState<boolean>(false);
   const [noBatakStreak, setNoBatakStreak] = useState<number>(0);
   const [playedModes, setPlayedModes] = useState<Set<string>>(new Set());
@@ -1255,6 +1261,27 @@ const AppContent: React.FC = () => {
       const isUserBatak = results.batakPlayers.includes(0);
       const perfectGame = userPlayer.tricksWon === totalTricks;
       const bid13 = userPlayer.currentBid === 13 && !isUserBatak;
+      
+      // Rating sistemi: Kazanç kaydet ve uygun anı kontrol et
+      if (isUserWinner) {
+        recordWin();
+        
+        // Batak yapıp kazandıysa özel trigger
+        if (results.batakPlayers.some(id => id !== 0) && perfectGame) {
+          if (shouldShowAfterBatak()) {
+            setTimeout(() => {
+              setRatingContext('batak');
+              setShowRatingPrompt(true);
+            }, 2000);
+          }
+        } else if (shouldShowRatingPrompt()) {
+          // Normal kazanç sonrası rating prompt
+          setTimeout(() => {
+            setRatingContext('win');
+            setShowRatingPrompt(true);
+          }, 2000);
+        }
+      }
       
       // Zorluk seviyesine göre coin ödülleri
       const difficultyCoins = getDifficultyCoins(gameSettings.difficulty);
@@ -3570,6 +3597,83 @@ const AppContent: React.FC = () => {
                 <div className={`text-xl font-bold ${gameEndMessage.coins >= 0 ? 'text-yellow-300' : 'text-red-300'}`}>
                   {gameEndMessage.coins >= 0 ? '+' : ''}{gameEndMessage.coins} 🪙
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* RATING PROMPT MODAL */}
+        {showRatingPrompt && (
+          <div className="fixed inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="w-full max-w-sm bg-gradient-to-b from-emerald-900 to-emerald-950 rounded-3xl p-6 border border-white/10 shadow-2xl animate-fade-in">
+              <div className="text-center">
+                {/* Üst Icon */}
+                <div className="text-5xl mb-4">
+                  {ratingContext === 'batak' ? '🏆' : ratingContext === 'level' ? '⭐' : '🃏'}
+                </div>
+                
+                {/* Başlık */}
+                <h2 className="text-xl font-black text-white mb-2">
+                  {ratingContext === 'batak' 
+                    ? 'Muhteşem Oyun!' 
+                    : ratingContext === 'level' 
+                    ? 'Tebrikler!' 
+                    : 'Batak Pro\'yu Nasıl Buldun?'}
+                </h2>
+                <p className="text-white/60 text-sm mb-6">
+                  {ratingContext === 'batak'
+                    ? 'Bu performansı değerlendirir misin?'
+                    : 'Görüşlerin bizim için çok değerli!'}
+                </p>
+                
+                {/* Emoji Seçenekleri */}
+                <div className="flex justify-center gap-4 mb-6">
+                  <button
+                    onClick={async () => {
+                      await handleRatingResponse('love');
+                      setShowRatingPrompt(false);
+                    }}
+                    className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-black/30 border border-white/10 hover:bg-emerald-500/30 hover:border-emerald-400 transition-all active:scale-95"
+                  >
+                    <span className="text-4xl">😍</span>
+                    <span className="text-white text-xs font-bold">Harika!</span>
+                  </button>
+                  
+                  <button
+                    onClick={async () => {
+                      await handleRatingResponse('like');
+                      setShowRatingPrompt(false);
+                    }}
+                    className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-black/30 border border-white/10 hover:bg-emerald-500/30 hover:border-emerald-400 transition-all active:scale-95"
+                  >
+                    <span className="text-4xl">😊</span>
+                    <span className="text-white text-xs font-bold">İyi</span>
+                  </button>
+                  
+                  <button
+                    onClick={async () => {
+                      await handleRatingResponse('meh');
+                      setShowRatingPrompt(false);
+                      setMessage('Geri bildiriminiz için teşekkürler!');
+                      setTimeout(() => setMessage(null), 2000);
+                    }}
+                    className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-black/30 border border-white/10 hover:bg-white/10 hover:border-white/30 transition-all active:scale-95"
+                  >
+                    <span className="text-4xl">😐</span>
+                    <span className="text-white/60 text-xs font-bold">Eh işte</span>
+                  </button>
+                </div>
+                
+                {/* Sonra Sor Butonu */}
+                <button
+                  onClick={async () => {
+                    await handleRatingResponse('later');
+                    setShowRatingPrompt(false);
+                  }}
+                  className="text-white/40 text-sm hover:text-white/60 transition-colors"
+                >
+                  Sonra Sor
+                </button>
               </div>
             </div>
           </div>
