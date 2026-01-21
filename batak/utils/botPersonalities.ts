@@ -1,4 +1,5 @@
 // Bot Kişilik Sistemi - Dinamik ve Bağlama Duyarlı Konuşmalar
+// TÜM METİNLER TÜRKÇE - İngilizce kelime yok!
 
 export interface BotPersonality {
   id: string;
@@ -9,7 +10,6 @@ export interface BotPersonality {
   ageGroup: 'young' | 'middle' | 'old';
   mood: 'happy' | 'neutral' | 'angry' | 'surprised' | 'confident';
   quotes: {
-    // Oyun durumları
     gameStart: string[];
     trickWin: string[];
     trickLose: string[];
@@ -17,24 +17,16 @@ export interface BotPersonality {
     gameLose: string[];
     batak: string[];
     perfectGame: string[];
-    
-    // İhale
     bidLow: string[];
     bidHigh: string[];
     bidPass: string[];
     bidWin: string[];
-    
-    // Oyun sırası
     playFirst: string[];
     playLast: string[];
     playTrump: string[];
-    
-    // Duruma göre
     winning: string[];
     losing: string[];
     close: string[];
-    
-    // Sosyal
     taunt: string[];
     compliment: string[];
     frustrated: string[];
@@ -43,7 +35,7 @@ export interface BotPersonality {
   };
 }
 
-// 6 Farklı Kişilik Tipi
+// 6 Farklı Kişilik Tipi - TAMAMEN TÜRKÇE
 export const BOT_PERSONALITIES: BotPersonality[] = [
   // 1. TOSUN DAYI - Agresif, yaşlı, deneyimli
   {
@@ -63,6 +55,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "40 yıllık tecrübe konuşuyor.",
         "Hazır mısınız yenilmeye?",
         "Bu oyunu ben icat ettim sanki.",
+        "Kıraathanede şampiyon bendim.",
       ],
       trickWin: [
         "Ha şöyle!",
@@ -73,6 +66,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Bir el daha bende.",
         "Yaşlı kurdu küçümseme!",
         "Öğrenin bakın.",
+        "Bunun adı kalite!",
       ],
       trickLose: [
         "Hmm, iyi oynadın.",
@@ -80,6 +74,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Bekle sen.",
         "Şans bu sefer senden yana.",
         "Acele etme, daha bitmedi.",
+        "Olur böyle şeyler.",
       ],
       gameWin: [
         "Demiştim ben!",
@@ -88,6 +83,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Bir ders daha tamamlandı.",
         "Tosun Dayı'yı yenemezsiniz!",
         "Usta işi!",
+        "Kolay geldi!",
       ],
       gameLose: [
         "Bu sefer affettim.",
@@ -95,6 +91,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Bir dahakine görüşürüz.",
         "İyi oynadın, kabul.",
         "Yaşlandık galiba...",
+        "Olur böyle günler.",
       ],
       batak: [
         "Eyvah be!",
@@ -102,11 +99,13 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Bu olmadı!",
         "40 yılda ilk kez!",
         "Hay aksi!",
+        "Böyle şey olur mu ya!",
       ],
       perfectGame: [
         "İşte buna oyun derim!",
         "13'te 13! Mükemmel!",
         "Yaşlı kurt bu.",
+        "Tam isabet!",
       ],
       bidLow: [
         "4 yeter bana.",
@@ -142,7 +141,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
       playTrump: [
         "Koz devrede!",
         "Bunu yeyin bakalım!",
-        "Trump zamanı!",
+        "Koz zamanı!",
       ],
       winning: [
         "Rahat oyun bu.",
@@ -193,7 +192,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
     },
   },
   
-  // 2. SELIN - Genç, troll, eğlenceli
+  // 2. SELİN - Genç, eğlenceli, şakacı
   {
     id: 'selin',
     name: 'Selin',
@@ -210,16 +209,16 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Hadi bakalım, göster kendini!",
         "Bugün şanslıyım hissediyorum ✨",
         "Yine mi ben kazanacağım?",
+        "Hadi başlayalım!",
       ],
       trickWin: [
-        "Ezzzz! 😎",
-        "Çok kolaydı bu.",
-        "Üzgünüm... şaka, değilim 😂",
+        "Çok kolaydı bu! 😎",
         "Bu da bende!",
+        "Üzgünüm... şaka, değilim 😂",
         "Yine mi? Sıkılmadınız mı?",
-        "GG!",
-        "Too easy!",
-        "Oof!",
+        "Çok rahat!",
+        "Bir tane daha!",
+        "Öf, ne kolaymış!",
       ],
       trickLose: [
         "Şansına küs! 😤",
@@ -227,55 +226,59 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Bu olmaz!",
         "Nasıl ya?!",
         "Bekle sen! 😈",
+        "İmkansız!",
       ],
       gameWin: [
-        "EZ WIN! 🏆",
+        "Kolay geldi! 🏆",
         "Söyledim mi?",
         "Selin her zaman kazanır!",
-        "Thanks for playing! 😘",
-        "One more? 😏",
+        "Oynadığınız için teşekkürler! 😘",
+        "Bir daha? 😏",
+        "Efsane oyun!",
       ],
       gameLose: [
-        "Bug var kesin 🐛",
-        "Lag yaptı!",
+        "Hata var kesin 🐛",
+        "İnternet yavaşladı!",
         "Şanslıydın!",
-        "Rematch! Şimdi!",
+        "Rövanş! Hemen!",
         "Bu sayılmaz!",
+        "Tekrar oynayalım!",
       ],
       batak: [
-        "NOOOO! 😭",
+        "HAYIRRR! 😭",
         "Bu kabus!",
         "Olmaz olmaz olmaz!",
-        "Hileee!",
+        "Şaka yapıyorsunuz!",
       ],
       perfectGame: [
-        "PERFECT! 💯",
-        "13/13! Efsane!",
-        "I'm the best! 👑",
+        "Mükemmel! 💯",
+        "13'te 13! Efsane!",
+        "En iyisi benim! 👑",
+        "Tam isabet!",
       ],
       bidLow: [
         "4 atıyorum, temkinli.",
         "Küçük başlayalım.",
       ],
       bidHigh: [
-        "12! YOLO! 🎲",
-        "All in!",
+        "12! Cesaret lazım! 🎲",
+        "Hepsini alacağım!",
         "Cesaretsiz kazanamaz!",
         "13! Neden olmasın?",
       ],
       bidPass: [
         "Pas, bu sefer izliyorum.",
-        "Skip!",
-        "Nah, beklerim.",
+        "Geçiyorum!",
+        "Beklerim.",
       ],
       bidWin: [
-        "Benim turn!",
-        "Showtime! 🎬",
+        "Sıra bende!",
+        "Gösteri zamanı! 🎬",
         "Seyredin ve öğrenin.",
       ],
       playFirst: [
         "Ben başlıyorum!",
-        "First blood!",
+        "İlk hamle benden!",
         "Açıyorum!",
       ],
       playLast: [
@@ -284,21 +287,21 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Son hamle!",
       ],
       playTrump: [
-        "TRUMP! 💣",
-        "Koz attım! Deal with it!",
-        "Boom! 💥",
+        "Koz! 💣",
+        "Koz attım! Bunu yeyin!",
+        "Patlıyoruz! 💥",
       ],
       winning: [
         "Eğleniyor musunuz? 😏",
-        "Too ez!",
+        "Çok kolay!",
         "Devam devam!",
-        "Loving it! ❤️",
+        "Bayılıyorum! ❤️",
       ],
       losing: [
         "Hala kazanabilirim!",
-        "Plot twist geliyor!",
+        "Sürpriz geliyor!",
         "Bekle sen!",
-        "Comeback queen! 👑",
+        "Geri dönüş kraliçesi! 👑",
       ],
       close: [
         "Heyecanlı!",
@@ -309,15 +312,15 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Ağlama sonra! 😢",
         "Kolay olacak bu.",
         "Acıdım size.",
-        "Şimdiden gg.",
-        "Ez clap! 👏",
-        "Noob? 🤔",
+        "Şimdiden tebrikler bana.",
+        "Çok kolay! 👏",
+        "Acemi misiniz? 🤔",
       ],
       compliment: [
-        "Oha! İyi oynadın!",
-        "Respect! ✊",
-        "Nice one!",
-        "GG WP!",
+        "Vay! İyi oynadın!",
+        "Saygılar! ✊",
+        "Güzel hamle!",
+        "İyi oyun!",
       ],
       frustrated: [
         "AAAHH! 😤",
@@ -325,15 +328,15 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Şaka mı bu?!",
       ],
       excited: [
-        "YESSS! 🎉",
-        "Wohooo!",
-        "Let's gooo!",
+        "EVETTT! 🎉",
+        "Yaşasın!",
+        "Hadi gidelim!",
       ],
       thinking: [
         "Hmm... 🤔",
-        "Wait...",
-        "Düşünüyorum...",
         "Bir saniye...",
+        "Düşünüyorum...",
+        "Bekle...",
       ],
     },
   },
@@ -354,6 +357,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Her oyun bir derstir.",
         "Sabırla, dikkatle.",
         "Bismillah.",
+        "Allah yardımcımız olsun.",
       ],
       trickWin: [
         "Hamdolsun.",
@@ -622,11 +626,11 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
     mood: 'confident',
     quotes: {
       gameStart: [
-        "Poker face aktif! 😎",
-        "Blöf mü değil mi, bilemezsin!",
+        "Blöf mü değil mi, bilemezsin! 😎",
         "Risk almayan kazanamaz!",
         "Bugün şans benden yana!",
         "Yüksek risk, yüksek kazanç!",
+        "Korkaklar için değil bu oyun!",
       ],
       trickWin: [
         "Blöf değildi! 😏",
@@ -635,7 +639,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Görüyor musun?",
         "Cesaret işte!",
         "Yine tuttum!",
-        "Lucky? Skill! 💪",
+        "Şanslıyım mı? Yetenekliyim! 💪",
       ],
       trickLose: [
         "Blöf tutmadı...",
@@ -647,8 +651,8 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
       gameWin: [
         "Risk her zaman kazandırır!",
         "Blöfçüyü yenemedin!",
-        "Poker face for the win!",
         "Cesur ol, kazan!",
+        "Kolay geldi!",
       ],
       gameLose: [
         "Bu sefer tutmadı.",
@@ -664,7 +668,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
       perfectGame: [
         "Blöf değil, gerçek güç!",
         "Bazen elim gerçekten iyi!",
-        "13/13! No bluff needed!",
+        "13'te 13! Blöf gerek kalmadı!",
       ],
       bidLow: [
         "Yavaş yavaş...",
@@ -672,7 +676,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Sürpriz geliyor.",
       ],
       bidHigh: [
-        "ALL IN! 13! 🎰",
+        "Hepsini istiyorum! 13! 🎰",
         "Blöf mü gerçek mi? Gel gör!",
         "Cesaretin varsa artır!",
         "Risk almayan kazanamaz!",
@@ -684,7 +688,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Bu sefer pas... ya da öyle mi?",
       ],
       bidWin: [
-        "Showtime! 🎭",
+        "Gösteri zamanı! 🎭",
         "Blöf zamanı!",
         "Hazır mısınız?",
       ],
@@ -699,7 +703,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Beklediniz mi?",
       ],
       playTrump: [
-        "Plot twist! 🔄",
+        "Sürpriz! 🔄",
         "Beklemiyordunuz değil mi?",
         "Koz bombası! 💣",
       ],
@@ -707,10 +711,10 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Risk kazandırıyor!",
         "Devam!",
         "Blöf üstüne blöf!",
-        "On fire! 🔥",
+        "Yanıyorum! 🔥",
       ],
       losing: [
-        "Comeback geliyor!",
+        "Geri dönüş geliyor!",
         "Daha büyük blöf zamanı!",
         "Bekle sen!",
         "Risk arttırıyorum!",
@@ -718,7 +722,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
       close: [
         "Heyecan dorukta!",
         "Son blöf!",
-        "All or nothing!",
+        "Ya hep ya hiç!",
       ],
       taunt: [
         "Korktu mu? 😏",
@@ -731,7 +735,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Güzel blöf!",
         "Risk almışsın!",
         "Cesur hamle!",
-        "Respect! 🤝",
+        "Saygılar! 🤝",
       ],
       frustrated: [
         "Blöf patladı!",
@@ -739,20 +743,20 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Olacak iş değil!",
       ],
       excited: [
-        "YESSSS! 🎉",
+        "EVETTT! 🎉",
         "Risk kazandırdı!",
-        "All in and WIN!",
+        "Hepsini alıyorum!",
       ],
       thinking: [
         "Blöf mü etsem... 🤔",
         "Risk mi alsam...",
         "Hmm...",
-        "Poker face...",
+        "Düşünüyorum...",
       ],
     },
   },
   
-  // 6. AYŞE TEYZE - Rookie, samimi, öğreniyor
+  // 6. AYŞE TEYZE - Acemi, samimi, öğreniyor
   {
     id: 'ayse',
     name: 'Ayşe Teyze',
@@ -768,6 +772,7 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
         "Bu oyunu yeni öğrendim ama çok sevdim!",
         "Hadi bakalım, ne olacak!",
         "Çayınızı aldınız mı?",
+        "Eğlenelim biraz!",
       ],
       trickWin: [
         "Aaa kazandım mı? 😊",
@@ -910,7 +915,7 @@ export const getRandomPersonality = (excludeIds: string[] = []): BotPersonality 
   return available[Math.floor(Math.random() * available.length)];
 };
 
-// Kişiliğe göre isim al (kişiliğin varsayılan ismi yerine rastgele)
+// Kişiliğe göre isim al
 export const getNameForPersonality = (personality: BotPersonality, excludeNames: string[] = []): string => {
   const names = PERSONALITY_NAMES[personality.style] || PERSONALITY_NAMES.cautious;
   const available = names.filter(n => !excludeNames.includes(n));
@@ -932,7 +937,6 @@ export const getBotQuote = (
 ): string => {
   let quotes = personality.quotes[type];
   
-  // Bağlama göre ek cümleler
   if (context) {
     if (context.perfectGame && type === 'gameWin') {
       quotes = [...quotes, ...personality.quotes.perfectGame];
@@ -988,4 +992,3 @@ export const updateBotMood = (
   if (isWinning) return 'confident';
   return 'neutral';
 };
-

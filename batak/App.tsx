@@ -2543,13 +2543,13 @@ const AppContent: React.FC = () => {
                   <div className={`bg-[#2d1a0a] p-6 rounded-[2rem] border border-white/10 w-full max-w-sm text-center shadow-2xl animate-pop-in wood-border`}>
                     <h2 className="text-2xl font-black text-white italic mb-2">İHALE</h2>
                     
-                    {/* İhale Geçmişi */}
+                    {/* İhale Geçmişi - Daha kompakt */}
                     {bidHistory.length > 0 && (
-                      <div className="mb-4 max-h-24 overflow-y-auto bg-black/20 rounded-xl p-2">
-                        {bidHistory.slice(-6).map((entry, idx) => (
-                          <div key={idx} className="flex justify-between text-xs py-1 border-b border-white/5 last:border-0">
+                      <div className="mb-3 max-h-32 overflow-y-auto bg-black/20 rounded-xl p-2 text-[11px]">
+                        {bidHistory.slice(-8).map((entry, idx) => (
+                          <div key={idx} className="flex justify-between py-0.5 border-b border-white/5 last:border-0">
                             <span className={`font-bold ${entry.playerId === 0 ? 'text-emerald-400' : 'text-white/60'}`}>{entry.playerName}</span>
-                            <span className={entry.bid ? 'text-yellow-400' : 'text-rose-400'}>
+                            <span className={entry.bid ? 'text-yellow-400 font-bold' : 'text-rose-400'}>
                               {entry.bid ? entry.bid : 'PAS'}
                             </span>
                           </div>
@@ -2649,20 +2649,20 @@ const AppContent: React.FC = () => {
                  <button onClick={() => setPhase(GamePhase.LOBBY)} className="w-8 h-8 bg-black/60 backdrop-blur-xl rounded-lg flex items-center justify-center text-white border border-white/10"><Home size={14}/></button>
                </div>
                
-               {/* El ve Koz Bilgisi - Butonların altında sabit, daha küçük */}
-               <div className="bg-black/60 px-1.5 py-0.5 rounded-md flex items-center gap-1 border border-white/10 mt-1">
-                 <span className="text-white font-black text-xs">{trickCount + 1}</span>
-                 <span className="text-white/40 text-[8px]">/{selectedMode === GameMode.HIZLI ? 6 : 13}</span>
+               {/* El ve Koz Bilgisi - Butonların altında sabit */}
+               <div className="bg-black/70 px-2 py-1 rounded-lg flex items-center gap-1.5 border border-white/10 mt-1">
+                 <span className="text-white font-black text-sm">{trickCount + 1}</span>
+                 <span className="text-white/50 text-[10px]">/{selectedMode === GameMode.HIZLI ? 6 : 13}</span>
                  {trumpSuit && (
                    <>
-                     <span className="text-white/20">|</span>
-                     <span className={`text-sm ${trumpSuit === Suit.HEARTS || trumpSuit === Suit.DIAMONDS ? 'text-rose-500' : 'text-white'}`}>
+                     <span className="text-white/30">|</span>
+                     <span className={`text-base ${trumpSuit === Suit.HEARTS || trumpSuit === Suit.DIAMONDS ? 'text-rose-500' : 'text-white'}`}>
                        {trumpSuit}
                      </span>
                    </>
                  )}
-                 <span className="text-white/20">|</span>
-                 <span className="text-emerald-400 text-[7px] font-black uppercase">{selectedMode.replace('_', ' ')}</span>
+                 <span className="text-white/30">|</span>
+                 <span className="text-emerald-400 text-[9px] font-black uppercase">{selectedMode.replace('_', ' ')}</span>
                </div>
              </div>
              
@@ -2760,18 +2760,46 @@ const AppContent: React.FC = () => {
                 </div>
                 
                 <div className="flex flex-col gap-[-40px] items-center">
-                   <div className="flex justify-center -space-x-11 mb-[-60px]">
-                      {players[0]?.hand.slice(0, 7).map(card => {
-                        const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
-                        return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105" />
-                      })}
-                   </div>
-                   <div className="flex justify-center -space-x-11 z-[60]">
-                      {players[0]?.hand.slice(7).map(card => {
-                        const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
-                        return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105" />
-                      })}
-                   </div>
+                   {/* Tekli/Üçlü modda 3 satır, normal modda 2 satır */}
+                   {selectedMode === GameMode.TEKLI ? (
+                     // Tekli mod: 26 kart - 3 satır (9+9+8)
+                     <>
+                       <div className="flex justify-center -space-x-12 mb-[-50px]">
+                         {players[0]?.hand.slice(0, 9).map(card => {
+                           const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
+                           return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105 scale-[0.85]" />
+                         })}
+                       </div>
+                       <div className="flex justify-center -space-x-12 mb-[-50px] z-[55]">
+                         {players[0]?.hand.slice(9, 18).map(card => {
+                           const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
+                           return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105 scale-[0.85]" />
+                         })}
+                       </div>
+                       <div className="flex justify-center -space-x-12 z-[60]">
+                         {players[0]?.hand.slice(18).map(card => {
+                           const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
+                           return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105 scale-[0.85]" />
+                         })}
+                       </div>
+                     </>
+                   ) : (
+                     // Normal mod: 13 kart - 2 satır (7+6)
+                     <>
+                       <div className="flex justify-center -space-x-11 mb-[-60px]">
+                         {players[0]?.hand.slice(0, 7).map(card => {
+                           const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
+                           return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105" />
+                         })}
+                       </div>
+                       <div className="flex justify-center -space-x-11 z-[60]">
+                         {players[0]?.hand.slice(7).map(card => {
+                           const valid = isValidMove(card, players[0].hand, currentTrick, trumpSuit, spadesBroken, trickCount, gameSettings.houseRules);
+                           return <CardUI key={card.id} card={card} playable={valid && currentPlayerIdx === 0 && !isBidding} onClick={() => playCard(0, card)} className="shadow-2xl hover:scale-105" />
+                         })}
+                       </div>
+                     </>
+                   )}
                 </div>
              </div>
              
