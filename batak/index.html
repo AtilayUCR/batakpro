@@ -53,6 +53,28 @@
         100% { transform: translate3d(50px, 0, 0) rotate(-15deg) scale(1); opacity: 1; }
       }
 
+      /* --- CARD COLLECTION ANIMATIONS --- */
+      @keyframes collect-to-0 {
+        0% { transform: translate3d(var(--start-x, 0), var(--start-y, 0), 0) rotate(var(--start-rotation, 0deg)) scale(1); opacity: 1; }
+        50% { transform: translate3d(calc(var(--start-x, 0) * 0.5), calc(var(--start-y, 0) * 0.5 + 200px), 0) rotate(180deg) scale(0.8); opacity: 0.8; }
+        100% { transform: translate3d(0, 300px, 0) rotate(360deg) scale(0); opacity: 0; }
+      }
+      @keyframes collect-to-1 {
+        0% { transform: translate3d(var(--start-x, 0), var(--start-y, 0), 0) rotate(var(--start-rotation, 0deg)) scale(1); opacity: 1; }
+        50% { transform: translate3d(calc(var(--start-x, 0) * 0.5 - 200px), calc(var(--start-y, 0) * 0.5), 0) rotate(-180deg) scale(0.8); opacity: 0.8; }
+        100% { transform: translate3d(-300px, 0, 0) rotate(-360deg) scale(0); opacity: 0; }
+      }
+      @keyframes collect-to-2 {
+        0% { transform: translate3d(var(--start-x, 0), var(--start-y, 0), 0) rotate(var(--start-rotation, 0deg)) scale(1); opacity: 1; }
+        50% { transform: translate3d(calc(var(--start-x, 0) * 0.5), calc(var(--start-y, 0) * 0.5 - 200px), 0) rotate(180deg) scale(0.8); opacity: 0.8; }
+        100% { transform: translate3d(0, -300px, 0) rotate(360deg) scale(0); opacity: 0; }
+      }
+      @keyframes collect-to-3 {
+        0% { transform: translate3d(var(--start-x, 0), var(--start-y, 0), 0) rotate(var(--start-rotation, 0deg)) scale(1); opacity: 1; }
+        50% { transform: translate3d(calc(var(--start-x, 0) * 0.5 + 200px), calc(var(--start-y, 0) * 0.5), 0) rotate(-180deg) scale(0.8); opacity: 0.8; }
+        100% { transform: translate3d(300px, 0, 0) rotate(-360deg) scale(0); opacity: 0; }
+      }
+
       .animate-pop-in { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
       @keyframes popIn {
         0% { transform: scale(0.8); opacity: 0; }
