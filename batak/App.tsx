@@ -48,8 +48,15 @@ import {
   initializeAnalytics, logGameStart, logGameEnd, logGameModePlay,
   logRewardedAdWatched, logInterstitialShown, logDailyRewardClaimed,
   logLevelUp, logOnboardingCompleted, logTrumpSelected, logCoinEarned,
-  logCoinSpent, logSettingChanged, logScreenView, setUserProperties
+  logCoinSpent, logSettingChanged, logScreenView, setUserProperties,
+  logCoinBalance, logSubscriptionPurchased, logAdFreePurchasedWithCoins,
+  logSpecialOfferShown, logSpecialOfferResponse, logPremiumModalOpened,
+  logRewardedAdClicked, updateUserSegment, logReferralShare
 } from './utils/analyticsSystem';
+import {
+  getReferralCode, getReferralStats, shareInvite, shareVictory,
+  canClaimDailyShareBonus, claimDailyShareBonus, REFERRAL_REWARDS
+} from './utils/referralSystem';
 import { initializeCrashlytics, logGameState, setUserId as setCrashlyticsUserId } from './utils/crashlyticsSystem';
 import { initializePushNotifications, getFCMToken } from './utils/pushNotificationSystem';
 import { 
@@ -278,6 +285,9 @@ const AppContent: React.FC = () => {
   const [showAdFreeShop, setShowAdFreeShop] = useState<boolean>(false);
   const [showPremiumModal, setShowPremiumModal] = useState<boolean>(false);
   const [firstGameBonusClaimed, setFirstGameBonusClaimed] = useState<boolean>(false);
+  const [showSpecialOffer, setShowSpecialOffer] = useState<boolean>(false);
+  const [specialOfferType, setSpecialOfferType] = useState<'day3' | 'day14' | null>(null);
+  const [showReferralModal, setShowReferralModal] = useState<boolean>(false);
 
   const [gameSettings, setGameSettings] = useState<GameSettings>({
     difficulty: Difficulty.MEDIUM,
@@ -466,6 +476,22 @@ const AppContent: React.FC = () => {
         totalGames: userProfile.gamesPlayed,
         isPremium: isPremiumUser(),
       });
+      
+      // Coin bakiyesi ve user segment logla
+      logCoinBalance(userProfile.coins);
+      
+      // İlk oyun tarihinden bu yana geçen gün
+      const firstPlayDate = localStorage.getItem('batakFirstPlayDate');
+      const daysSinceFirstPlay = firstPlayDate 
+        ? Math.floor((Date.now() - new Date(firstPlayDate).getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+      
+      updateUserSegment({
+        daysSinceFirstPlay,
+        totalCoinsEarned: userProfile.totalCoinsEarned || 0,
+        totalGames: userProfile.gamesPlayed,
+        isPremium: isPremiumUser(),
+      });
     };
     setupServices();
     
@@ -504,6 +530,9 @@ const AppContent: React.FC = () => {
 
   // Reklam izleme fonksiyonu
   const handleWatchAd = async (rewardType: 'coins' | 'double' | 'powerup' | 'adfree30') => {
+    // Analytics: Rewarded ad butonuna tıklandı
+    logRewardedAdClicked(rewardType);
+    
     if (!canWatchRewardedAd()) {
       setMessage('Bugünkü reklam limitine ulaştın!');
       setTimeout(() => setMessage(null), 2000);
@@ -521,7 +550,7 @@ const AppContent: React.FC = () => {
                                   rewardType === 'adfree30' ? 'adfree30' : 'coins100';
       logRewardedAdWatched({ 
         rewardType: analyticsRewardType as 'adfree30' | 'coins100' | 'coins200' | 'double',
-        coinsEarned: rewardType === 'coins' ? 50 : rewardType === 'double' ? lastGameCoins : 0
+        coinsEarned: rewardType === 'coins' ? 25 : rewardType === 'double' ? lastGameCoins : 0
       });
       
       if (rewardType === 'adfree30') {
@@ -535,9 +564,9 @@ const AppContent: React.FC = () => {
           let updated = { ...prev };
           
           if (rewardType === 'coins') {
-            updated.coins += 50;
-            updated.totalCoinsEarned += 50;
-            logCoinEarned({ amount: 50, source: 'rewarded_ad' });
+            updated.coins += 25;
+            updated.totalCoinsEarned += 25;
+            logCoinEarned({ amount: 25, source: 'rewarded_ad' });
           } else if (rewardType === 'double' && lastGameCoins > 0) {
             updated.coins += lastGameCoins;
             updated.totalCoinsEarned += lastGameCoins;
@@ -550,7 +579,7 @@ const AppContent: React.FC = () => {
           return updated;
         });
         
-        setMessage(rewardType === 'coins' ? '+50 Coin!' : rewardType === 'double' ? 'Coinler 2x!' : '+1 Geri Al!');
+        setMessage(rewardType === 'coins' ? '+25 Coin!' : rewardType === 'double' ? 'Coinler 2x!' : '+1 Geri Al!');
         setTimeout(() => setMessage(null), 2000);
       }
     });
@@ -603,6 +632,8 @@ const AppContent: React.FC = () => {
     const result = purchaseAdFreeWithCoins(userProfile.coins, packageId);
     
     if (result.success) {
+      const pkg = AD_FREE_PACKAGES.find(p => p.id === packageId);
+      
       setUserProfile(prev => {
         const updated = {
           ...prev,
@@ -613,10 +644,23 @@ const AppContent: React.FC = () => {
         return updated;
       });
       
+      // Analytics: Ad-free coin ile alındı
+      if (pkg) {
+        logAdFreePurchasedWithCoins({
+          packageId: packageId,
+          coinsCost: pkg.coins,
+          durationMinutes: pkg.duration,
+        });
+        logCoinSpent({
+          amount: pkg.coins,
+          itemType: 'ad_free',
+          itemId: packageId,
+        });
+      }
+      
       hideBannerAd();
       setShowAdFreeShop(false);
       
-      const pkg = AD_FREE_PACKAGES.find(p => p.id === packageId);
       setMessage(`✅ ${pkg?.label} reklamsız aktif!`);
       setTimeout(() => setMessage(null), 3000);
     } else {
@@ -632,6 +676,36 @@ const AppContent: React.FC = () => {
       // setShowDailyReward(true);
     }
   }, [phase, userProfile]);
+
+  // Özel teklif kontrolü (3. gün ve 14. gün)
+  useEffect(() => {
+    if (phase === GamePhase.LOBBY && !isPremiumUser()) {
+      const firstPlayDate = localStorage.getItem('batakFirstPlayDate');
+      const offerShown = localStorage.getItem('batakSpecialOfferShown');
+      
+      if (!firstPlayDate) {
+        // İlk oyun tarihi kaydet
+        localStorage.setItem('batakFirstPlayDate', new Date().toISOString());
+      } else {
+        const daysSinceFirstPlay = Math.floor(
+          (Date.now() - new Date(firstPlayDate).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        
+        // 3. gün teklifi
+        if (daysSinceFirstPlay >= 3 && daysSinceFirstPlay < 7 && offerShown !== 'day3') {
+          setSpecialOfferType('day3');
+          setShowSpecialOffer(true);
+          logSpecialOfferShown('day3');
+        }
+        // 14. gün teklifi
+        else if (daysSinceFirstPlay >= 14 && daysSinceFirstPlay < 21 && offerShown !== 'day14') {
+          setSpecialOfferType('day14');
+          setShowSpecialOffer(true);
+          logSpecialOfferShown('day14');
+        }
+      }
+    }
+  }, [phase]);
 
   // Görev sıfırlama kontrolü
   useEffect(() => {
@@ -1336,8 +1410,9 @@ const AppContent: React.FC = () => {
           updated.totalCoinsSpent += Math.abs(coinsEarned);
         }
         
-        // XP ekle ve seviye kontrolü
-        const xpResult = addXp(updated, xpEarned);
+        // XP ekle ve seviye kontrolü (Premium: 2x XP)
+        const finalXp = isPremiumUser() ? xpEarned * 2 : xpEarned;
+        const xpResult = addXp(updated, finalXp);
         updated = xpResult.newProfile;
         if (xpResult.leveledUp && xpResult.newLevel) {
           updated.coins += COINS_REWARDS.LEVEL_UP;
@@ -1697,6 +1772,16 @@ const AppContent: React.FC = () => {
                   <span className="text-emerald-400 font-black text-sm">{formatRemainingTime(adFreeTimeLeft)}</span>
                 </div>
               )}
+
+              {/* Arkadaş Davet Et - Referral */}
+              <button 
+                onClick={() => setShowReferralModal(true)}
+                className="w-full bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/30 text-white font-bold py-3 rounded-xl hover:bg-blue-500/30 transition-all text-xs flex items-center justify-center gap-2 mb-4"
+              >
+                <span className="text-lg">👥</span>
+                ARKADAŞINI DAVET ET = {REFERRAL_REWARDS.DAILY_SHARE_BONUS} COİN
+                {canClaimDailyShareBonus() && <span className="ml-2 px-2 py-0.5 bg-green-500 text-white text-[8px] rounded-full">BONUS!</span>}
+              </button>
             </>
           )}
 
@@ -2250,6 +2335,28 @@ const AppContent: React.FC = () => {
                   Tekrar Oyna
                 </button>
               </div>
+              
+              {/* Kazandıysa paylaş butonu */}
+              {(roundResults?.winnerId === 0 || (selectedMode === GameMode.ESLI && (roundResults?.winnerId === 0 || roundResults?.winnerId === 2))) && (
+                <button 
+                  onClick={async () => {
+                    const result = await shareVictory({
+                      mode: selectedMode,
+                      score: roundResults?.totalScores[0] || 0,
+                      username: userProfile.username,
+                      referralCode: getReferralCode(userProfile.username),
+                    });
+                    if (result.success) {
+                      logReferralShare('victory');
+                      setMessage('Başarın paylaşıldı! 🎉');
+                      setTimeout(() => setMessage(null), 2000);
+                    }
+                  }}
+                  className="mt-3 w-full bg-gradient-to-r from-blue-500/30 to-cyan-500/30 border border-blue-400/30 text-white font-bold py-3 rounded-2xl hover:bg-blue-500/40 transition-all text-sm flex items-center justify-center gap-2"
+                >
+                  <span>📤</span> Başarını Paylaş
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -2529,6 +2636,7 @@ const AppContent: React.FC = () => {
                    onClick={() => {
                      setShowSettings(false);
                      setShowPremiumModal(true);
+                     logPremiumModalOpened();
                    }}
                    className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-2 mb-4"
                  >
@@ -3476,6 +3584,177 @@ const AppContent: React.FC = () => {
           </div>
         )}
 
+        {/* Referral (Davet) Modal */}
+        {showReferralModal && (
+          <div className="fixed inset-0 z-[750] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className="bg-gradient-to-br from-blue-900 to-cyan-900 w-full max-w-md rounded-[3rem] p-6 border border-blue-400/30 shadow-2xl relative overflow-hidden">
+              <button 
+                onClick={() => setShowReferralModal(false)}
+                className="absolute top-4 right-4 p-2 bg-white/10 rounded-xl text-white/60 z-10"
+              >
+                <X size={18} />
+              </button>
+              
+              <div className="relative z-10">
+                <div className="text-center mb-6">
+                  <div className="text-5xl mb-3">👥</div>
+                  <h2 className="text-2xl font-black text-white mb-1">Arkadaşını Davet Et</h2>
+                  <p className="text-white/60 text-sm">Paylaş, arkadaşın indir, ikimiz de kazanalım!</p>
+                </div>
+                
+                {/* Davet Kodu */}
+                <div className="bg-black/30 rounded-2xl p-4 mb-4 border border-white/10 text-center">
+                  <div className="text-white/60 text-xs mb-2">Senin Davet Kodun</div>
+                  <div className="text-3xl font-black text-yellow-400 tracking-widest">
+                    {getReferralCode(userProfile.username)}
+                  </div>
+                </div>
+                
+                {/* İstatistikler */}
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="bg-white/5 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black text-white">{getReferralStats().totalInvites}</div>
+                    <div className="text-white/40 text-[10px]">Toplam Paylaşım</div>
+                  </div>
+                  <div className="bg-white/5 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black text-yellow-400">{getReferralStats().coinsEarned}</div>
+                    <div className="text-white/40 text-[10px]">Kazanılan Coin</div>
+                  </div>
+                </div>
+                
+                {/* Ödül Bilgisi */}
+                <div className="bg-yellow-500/10 rounded-xl p-3 mb-4 border border-yellow-400/30">
+                  <div className="text-yellow-400 text-xs font-bold text-center mb-2">🎁 Ödüller</div>
+                  <div className="text-white/80 text-[11px] text-center space-y-1">
+                    <div>• İlk paylaşımda günlük <span className="text-yellow-400 font-bold">{REFERRAL_REWARDS.DAILY_SHARE_BONUS} coin</span></div>
+                    <div>• Arkadaşın katılırsa <span className="text-yellow-400 font-bold">{REFERRAL_REWARDS.INVITER_BONUS} coin</span></div>
+                  </div>
+                </div>
+                
+                {/* Paylaş Butonu */}
+                <button
+                  onClick={async () => {
+                    const result = await shareInvite(
+                      getReferralCode(userProfile.username),
+                      userProfile.username
+                    );
+                    if (result.success) {
+                      logReferralShare('invite');
+                      
+                      // Günlük share bonus
+                      if (canClaimDailyShareBonus()) {
+                        const bonus = claimDailyShareBonus();
+                        if (bonus > 0) {
+                          setUserProfile(prev => ({
+                            ...prev,
+                            coins: prev.coins + bonus,
+                            totalCoinsEarned: prev.totalCoinsEarned + bonus,
+                          }));
+                          setMessage(`+${bonus} davet bonusu! 👥`);
+                          logCoinEarned({ amount: bonus, source: 'achievement' });
+                          setTimeout(() => setMessage(null), 3000);
+                        }
+                      }
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-black py-4 rounded-2xl shadow-lg hover:scale-105 transition-all flex items-center justify-center gap-2"
+                >
+                  <span className="text-xl">📤</span>
+                  PAYLAŞ
+                </button>
+                
+                <div className="mt-4 text-center text-white/30 text-[10px]">
+                  WhatsApp, Instagram, Telegram ve daha fazlasında paylaş!
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Özel Teklif Modal */}
+        {showSpecialOffer && specialOfferType && (
+          <div className="fixed inset-0 z-[750] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className="bg-gradient-to-br from-purple-900 to-pink-900 w-full max-w-md rounded-[3rem] p-8 border border-purple-400/30 shadow-2xl relative overflow-hidden">
+              {/* Parıltı efekti */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer"></div>
+              
+              <div className="relative z-10">
+                <div className="text-center mb-6">
+                  <div className="text-5xl mb-3">🎉</div>
+                  <h2 className="text-2xl font-black text-white mb-1">
+                    {specialOfferType === 'day3' ? 'Hoş Geldin Teklifi!' : 'Sadık Oyuncu Ödülü!'}
+                  </h2>
+                  <p className="text-white/60 text-sm">
+                    {specialOfferType === 'day3' 
+                      ? 'Seninle 3 gündür birlikteyiz! Özel indirim kazandın.' 
+                      : '14 gündür bizimlesin! Teşekkür indirimi kazandın.'}
+                  </p>
+                </div>
+                
+                <div className="bg-black/30 rounded-2xl p-6 mb-6 border border-white/10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="text-white font-black text-lg">Aylık Premium</div>
+                      <div className="text-white/40 text-xs line-through">₺49.99</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-3xl font-black text-yellow-400">
+                        {specialOfferType === 'day3' ? '₺24.99' : '₺29.99'}
+                      </div>
+                      <div className="text-emerald-400 text-xs font-bold">
+                        {specialOfferType === 'day3' ? '%50 İNDİRİM!' : '%40 İNDİRİM!'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="text-white/60 text-xs mb-4">
+                    ✓ Tüm reklamlar kaldırılır<br/>
+                    ✓ 2x XP kazanma<br/>
+                    ✓ Günlük 500 coin<br/>
+                    ✓ Günlük 5 undo hakkı
+                  </div>
+                  
+                  <div className="text-center text-rose-400 text-xs font-bold animate-pulse">
+                    ⏰ Bu teklif 24 saat geçerli!
+                  </div>
+                </div>
+                
+                <button
+                  onClick={async () => {
+                    // Not: Gerçek indirimli fiyat App Store Connect'te ayarlanmalı
+                    const success = await purchaseSubscription('monthly');
+                    if (success) {
+                      localStorage.setItem('batakSpecialOfferShown', specialOfferType);
+                      setShowSpecialOffer(false);
+                      logSpecialOfferResponse({ offerType: specialOfferType!, accepted: true });
+                      logSubscriptionPurchased({ 
+                        tier: 'monthly', 
+                        price: specialOfferType === 'day3' ? 24.99 : 29.99, 
+                        currency: 'TRY',
+                        isSpecialOffer: true 
+                      });
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-black font-black py-4 rounded-2xl mb-3 shadow-lg hover:scale-105 transition-all"
+                >
+                  TEKLİFİ AL!
+                </button>
+                
+                <button
+                  onClick={() => {
+                    localStorage.setItem('batakSpecialOfferShown', specialOfferType);
+                    setShowSpecialOffer(false);
+                    logSpecialOfferResponse({ offerType: specialOfferType!, accepted: false });
+                  }}
+                  className="w-full text-white/40 text-xs py-2"
+                >
+                  Hayır, teşekkürler
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Premium Subscription Modal */}
         {showPremiumModal && (
           <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
@@ -3500,7 +3779,7 @@ const AppContent: React.FC = () => {
                     
                     <div className="bg-yellow-500/10 p-4 rounded-2xl border border-yellow-400/30 mb-4">
                       <div className="text-white/60 text-xs mb-2">Kalan Geri Al Hakkı</div>
-                      <div className="text-3xl font-black text-yellow-400">{getPremiumDailyUndos()}/3</div>
+                      <div className="text-3xl font-black text-yellow-400">{getPremiumDailyUndos()}/5</div>
                     </div>
                     
                     {canClaimPremiumDailyCoins() && (
@@ -3510,12 +3789,13 @@ const AppContent: React.FC = () => {
                           if (coins > 0) {
                             setUserProfile(prev => ({ ...prev, coins: prev.coins + coins }));
                             setMessage(`+${coins} bonus coin alındı! 🪙`);
+                            logCoinEarned({ amount: coins, source: 'premium_daily' });
                             setTimeout(() => setMessage(null), 3000);
                           }
                         }}
                         className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-black py-3 rounded-2xl mb-4"
                       >
-                        🪙 Günlük 200 Coin Al
+                        🪙 Günlük 500 Coin Al
                       </button>
                     )}
                     
@@ -3531,11 +3811,11 @@ const AppContent: React.FC = () => {
                       <div className="space-y-3">
                         {[
                           { icon: '🚫', text: 'Tüm reklamlar kaldırılır' },
-                          { icon: '↩️', text: 'Günlük 3 Geri Al (Undo) hakkı' },
-                          { icon: '🪙', text: 'Günlük 200 bonus coin' },
+                          { icon: '⚡', text: '2x XP Kazanma' },
+                          { icon: '🪙', text: 'Günlük 500 bonus coin' },
+                          { icon: '↩️', text: 'Günlük 5 Geri Al (Undo) hakkı' },
                           { icon: '🎨', text: '5 özel premium tema' },
                           { icon: '👤', text: 'Özel "PRO" rozeti' },
-                          { icon: '📊', text: 'Gelişmiş istatistikler' },
                         ].map((feature, idx) => (
                           <div key={idx} className="flex items-center gap-3">
                             <span className="text-xl">{feature.icon}</span>
@@ -3554,6 +3834,12 @@ const AppContent: React.FC = () => {
                           const success = await purchaseSubscription('monthly');
                           if (success) {
                             setMessage('Satın alma işlemi başlatıldı!');
+                            logSubscriptionPurchased({ 
+                              tier: 'monthly', 
+                              price: SUBSCRIPTION_PRICES.monthly.amount, 
+                              currency: 'TRY',
+                              isSpecialOffer: false 
+                            });
                           } else {
                             setMessage('Satın alma başlatılamadı. Lütfen tekrar deneyin.');
                           }
@@ -3583,6 +3869,12 @@ const AppContent: React.FC = () => {
                           const success = await purchaseSubscription('weekly');
                           if (success) {
                             setMessage('Satın alma işlemi başlatıldı!');
+                            logSubscriptionPurchased({ 
+                              tier: 'weekly', 
+                              price: SUBSCRIPTION_PRICES.weekly.amount, 
+                              currency: 'TRY',
+                              isSpecialOffer: false 
+                            });
                           } else {
                             setMessage('Satın alma başlatılamadı. Lütfen tekrar deneyin.');
                           }

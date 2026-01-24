@@ -104,9 +104,9 @@ export const formatRemainingTime = (seconds: number): string => {
 
 // Coin ile reklamsız satın alma
 export const AD_FREE_PACKAGES = [
-  { id: 'mini', duration: 60, coins: 500, label: '1 Saat' },
-  { id: 'standard', duration: 1440, coins: 2000, label: '1 Gün' },
-  { id: 'mega', duration: 10080, coins: 10000, label: '1 Hafta' },
+  { id: 'mini', duration: 60, coins: 3000, label: '1 Saat' },
+  { id: 'standard', duration: 1440, coins: 15000, label: '1 Gün' },
+  { id: 'mega', duration: 10080, coins: 80000, label: '1 Hafta' },
 ];
 
 export const purchaseAdFreeWithCoins = (

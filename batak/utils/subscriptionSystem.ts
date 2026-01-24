@@ -268,8 +268,8 @@ export const getPremiumDailyUndos = (): number => {
     }
   }
   
-  // Yeni gün - 3 undo hakkı
-  const newData = { date: today, remaining: 3 };
+  // Yeni gün - 5 undo hakkı (Premium)
+  const newData = { date: today, remaining: 5 };
   localStorage.setItem('batakPremiumDailyUndos', JSON.stringify(newData));
   return 3;
 };
@@ -301,13 +301,13 @@ export const claimPremiumDailyCoins = (): number => {
     }
   }
   
-  // 200 coin ver
+  // 500 coin ver (Premium)
   localStorage.setItem('batakPremiumDailyCoins', JSON.stringify({
     date: today,
     claimed: true,
   }));
   
-  return 200;
+  return 500;
 };
 
 export const canClaimPremiumDailyCoins = (): boolean => {

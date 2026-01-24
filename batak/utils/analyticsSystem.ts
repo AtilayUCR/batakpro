@@ -377,7 +377,7 @@ export const logCoinSpent = async (params: {
 // Coin kazanma
 export const logCoinEarned = async (params: {
   amount: number;
-  source: 'game_win' | 'daily_reward' | 'rewarded_ad' | 'streak_bonus' | 'level_up';
+  source: 'game_win' | 'daily_reward' | 'rewarded_ad' | 'streak_bonus' | 'level_up' | 'premium_daily' | 'quest' | 'achievement';
 }): Promise<void> => {
   try {
     await FirebaseAnalytics.logEvent({
@@ -390,5 +390,188 @@ export const logCoinEarned = async (params: {
     });
   } catch (error) {
     console.error('Failed to log earn_virtual_currency:', error);
+  }
+};
+
+// ============================================
+// MONETİZASYON ANALİTİKLERİ
+// ============================================
+
+// Coin bakiyesi takibi (periyodik)
+export const logCoinBalance = async (balance: number): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'coin_balance',
+      params: {
+        balance: balance,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log coin_balance:', error);
+  }
+};
+
+// Subscription satın alındığında
+export const logSubscriptionPurchased = async (params: {
+  tier: 'weekly' | 'monthly';
+  price: number;
+  currency: string;
+  isSpecialOffer: boolean;
+}): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'subscription_purchased',
+      params: {
+        subscription_tier: params.tier,
+        price: params.price,
+        currency: params.currency,
+        is_special_offer: params.isSpecialOffer ? 'true' : 'false',
+      },
+    });
+    
+    // Firebase'e revenue olarak da gönder
+    await FirebaseAnalytics.logEvent({
+      name: 'purchase',
+      params: {
+        value: params.price,
+        currency: params.currency,
+        items: [{ item_id: `subscription_${params.tier}`, item_name: `Premium ${params.tier}`, price: params.price }],
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log subscription_purchased:', error);
+  }
+};
+
+// Reklamsız paket coin ile alındığında
+export const logAdFreePurchasedWithCoins = async (params: {
+  packageId: string;
+  coinsCost: number;
+  durationMinutes: number;
+}): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'adfree_purchased_coins',
+      params: {
+        package_id: params.packageId,
+        coins_cost: params.coinsCost,
+        duration_minutes: params.durationMinutes,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log adfree_purchased_coins:', error);
+  }
+};
+
+// Özel teklif gösterildiğinde
+export const logSpecialOfferShown = async (offerType: 'day3' | 'day14'): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'special_offer_shown',
+      params: {
+        offer_type: offerType,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log special_offer_shown:', error);
+  }
+};
+
+// Özel teklif kabul/red edildiğinde
+export const logSpecialOfferResponse = async (params: {
+  offerType: 'day3' | 'day14';
+  accepted: boolean;
+}): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'special_offer_response',
+      params: {
+        offer_type: params.offerType,
+        accepted: params.accepted ? 'true' : 'false',
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log special_offer_response:', error);
+  }
+};
+
+// Premium modal açıldığında
+export const logPremiumModalOpened = async (): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'premium_modal_opened',
+      params: {},
+    });
+  } catch (error) {
+    console.error('Failed to log premium_modal_opened:', error);
+  }
+};
+
+// Rewarded ad butonu tıklandığında (izlenmeden önce)
+export const logRewardedAdClicked = async (rewardType: string): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'rewarded_ad_clicked',
+      params: {
+        reward_type: rewardType,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log rewarded_ad_clicked:', error);
+  }
+};
+
+// Referral paylaşımı
+export const logReferralShare = async (shareType: 'invite' | 'victory' | 'batak'): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'referral_share',
+      params: {
+        share_type: shareType,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log referral_share:', error);
+  }
+};
+
+// Referral kodu uygulandı
+export const logReferralCodeApplied = async (): Promise<void> => {
+  try {
+    await FirebaseAnalytics.logEvent({
+      name: 'referral_code_applied',
+      params: {},
+    });
+  } catch (error) {
+    console.error('Failed to log referral_code_applied:', error);
+  }
+};
+
+// Kullanıcı segmenti güncelleme
+export const updateUserSegment = async (params: {
+  daysSinceFirstPlay: number;
+  totalCoinsEarned: number;
+  totalGames: number;
+  isPremium: boolean;
+}): Promise<void> => {
+  try {
+    // Kullanıcı segmenti belirleme
+    let segment = 'new'; // 0-3 gün
+    if (params.daysSinceFirstPlay >= 30) segment = 'veteran';
+    else if (params.daysSinceFirstPlay >= 7) segment = 'regular';
+    else if (params.daysSinceFirstPlay >= 3) segment = 'returning';
+    
+    await FirebaseAnalytics.setUserProperty({ key: 'user_segment', value: segment });
+    await FirebaseAnalytics.setUserProperty({ key: 'total_coins_earned', value: String(params.totalCoinsEarned) });
+    await FirebaseAnalytics.setUserProperty({ key: 'is_premium', value: params.isPremium ? 'true' : 'false' });
+    
+    // Harcama potansiyeli segmenti
+    let spendPotential = 'low';
+    if (params.totalGames >= 100 && !params.isPremium) spendPotential = 'high';
+    else if (params.totalGames >= 30) spendPotential = 'medium';
+    
+    await FirebaseAnalytics.setUserProperty({ key: 'spend_potential', value: spendPotential });
+  } catch (error) {
+    console.error('Failed to update user segment:', error);
   }
 };
