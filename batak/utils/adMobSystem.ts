@@ -55,7 +55,16 @@ interface AdFreeStatus {
 }
 
 export const getAdFreeStatus = (): AdFreeStatus => {
-  // Premium kontrolü
+  // 1. Subscription kontrolü (App Store / Google Play satın alımları)
+  const subscriptionData = localStorage.getItem('batakSubscription');
+  if (subscriptionData) {
+    const subscription = JSON.parse(subscriptionData);
+    if (subscription.isSubscribed && (!subscription.expiresAt || subscription.expiresAt > Date.now())) {
+      return { isAdFree: true, expiresAt: subscription.expiresAt, isPremium: true };
+    }
+  }
+  
+  // 2. Premium kontrolü (eski sistem)
   const premiumData = localStorage.getItem('batakPremium');
   if (premiumData) {
     const premium = JSON.parse(premiumData);
@@ -64,7 +73,7 @@ export const getAdFreeStatus = (): AdFreeStatus => {
     }
   }
   
-  // Geçici reklamsız süre kontrolü
+  // 3. Geçici reklamsız süre kontrolü (coin ile satın alınan)
   const adFreeData = localStorage.getItem('batakAdFree');
   if (adFreeData) {
     const adFree = JSON.parse(adFreeData);
