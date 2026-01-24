@@ -57,6 +57,13 @@ import {
   getReferralCode, getReferralStats, shareInvite, shareVictory,
   canClaimDailyShareBonus, claimDailyShareBonus, REFERRAL_REWARDS
 } from './utils/referralSystem';
+import {
+  recordCoinTransaction, validateCoinBalance, detectAnomaly,
+  checkRateLimit, RATE_LIMITS, secureStorage
+} from './utils/securitySystem';
+import {
+  soundCache, cleanupOldData, getLocalStorageSize, throttle
+} from './utils/performanceSystem';
 import { initializeCrashlytics, logGameState, setUserId as setCrashlyticsUserId } from './utils/crashlyticsSystem';
 import { initializePushNotifications, getFCMToken } from './utils/pushNotificationSystem';
 import { 
@@ -480,6 +487,24 @@ const AppContent: React.FC = () => {
       // Coin bakiyesi ve user segment logla
       logCoinBalance(userProfile.coins);
       
+      // Performans: Sesleri önceden yükle
+      const soundPack = SOUND_PACKS[gameSettings.soundPack];
+      soundCache.preload(soundPack.deal);
+      soundCache.preload(soundPack.play);
+      
+      // Performans: Eski verileri temizle
+      cleanupOldData(30); // 30 günden eski verileri temizle
+      
+      // Güvenlik: Coin bakiyesi doğrulama
+      const isValid = validateCoinBalance(
+        userProfile.coins,
+        userProfile.totalCoinsEarned || 0,
+        userProfile.totalCoinsSpent || 0
+      );
+      if (!isValid) {
+        console.warn('Coin balance anomaly detected');
+      }
+      
       // İlk oyun tarihinden bu yana geçen gün
       const firstPlayDate = localStorage.getItem('batakFirstPlayDate');
       const daysSinceFirstPlay = firstPlayDate 
@@ -533,6 +558,13 @@ const AppContent: React.FC = () => {
     // Analytics: Rewarded ad butonuna tıklandı
     logRewardedAdClicked(rewardType);
     
+    // Rate limiting kontrolü
+    if (!checkRateLimit('rewarded_ad', RATE_LIMITS.REWARDED_AD)) {
+      setMessage('Çok hızlı! Biraz bekle.');
+      setTimeout(() => setMessage(null), 2000);
+      return;
+    }
+    
     if (!canWatchRewardedAd()) {
       setMessage('Bugünkü reklam limitine ulaştın!');
       setTimeout(() => setMessage(null), 2000);
@@ -567,10 +599,12 @@ const AppContent: React.FC = () => {
             updated.coins += 25;
             updated.totalCoinsEarned += 25;
             logCoinEarned({ amount: 25, source: 'rewarded_ad' });
+            recordCoinTransaction('earn', 25, 'rewarded_ad');
           } else if (rewardType === 'double' && lastGameCoins > 0) {
             updated.coins += lastGameCoins;
             updated.totalCoinsEarned += lastGameCoins;
             logCoinEarned({ amount: lastGameCoins, source: 'rewarded_ad' });
+            recordCoinTransaction('earn', lastGameCoins, 'rewarded_ad_double');
           } else if (rewardType === 'powerup') {
             updated.undoCount += 1;
           }
@@ -766,15 +800,11 @@ const AppContent: React.FC = () => {
 
   const playSfx = (key: 'deal' | 'play') => {
     if (!gameSettings.soundEnabled) return;
-    const audio = audioRefs.current[key];
-    if (audio) {
-      // Yeni bir audio klonu oluştur - kesinti önlemek için
-      const clone = audio.cloneNode() as HTMLAudioElement;
-      clone.volume = audio.volume;
-      clone.play().catch(() => {});
-      // Çalma bittikten sonra temizle
-      clone.onended = () => clone.remove();
-    }
+    
+    // Önce cache'den dene (daha performanslı)
+    const soundPack = SOUND_PACKS[gameSettings.soundPack];
+    const url = key === 'deal' ? soundPack.deal : soundPack.play;
+    soundCache.play(url, 0.7);
   };
 
   // Bot düşünme süresi - değişkenlik eklenmiş
