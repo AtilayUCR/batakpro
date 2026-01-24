@@ -93,7 +93,7 @@ const getPlatform = (): 'ios' | 'android' | 'web' => {
   return 'web';
 };
 
-// StoreKit / Play Billing hazır mı?
+// Subscription Store hazır mı?
 let storeReady = false;
 
 export const initializeStore = async (): Promise<boolean> => {

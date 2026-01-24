@@ -3608,6 +3608,26 @@ const AppContent: React.FC = () => {
                       <br />İstediğin zaman iptal edebilirsin.
                     </div>
                     
+                    {/* EULA ve Gizlilik Politikası Linkleri - ZORUNLU */}
+                    <div className="mt-4 flex justify-center gap-4 text-[10px]">
+                      <a 
+                        href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-400 underline"
+                      >
+                        Kullanım Koşulları
+                      </a>
+                      <a 
+                        href="https://docs.google.com/document/d/1b0q3_YHQmv9jRhS2yU8aI3Yp8ZfZVYBGWu4T5g1Pq_A/edit?tab=t.0" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-400 underline"
+                      >
+                        Gizlilik Politikası
+                      </a>
+                    </div>
+                    
                     {/* Satın alımları geri yükle */}
                     <button 
                       onClick={async () => {
