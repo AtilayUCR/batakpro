@@ -418,9 +418,40 @@ export const purchasePowerUp = (
     updated.hintCount = (profile.hintCount || 0) + 1;
   } else if (powerUpId === 'streak_protection') {
     updated.streakProtectionCount = (profile.streakProtectionCount || 0) + 1;
+  } else if (powerUpId === 'double_coins') {
+    // 1 saat boyunca 2x coin
+    const now = Date.now();
+    const currentEnd = (profile as any).doubleCoinsUntil || 0;
+    (updated as any).doubleCoinsUntil = Math.max(currentEnd, now) + 60 * 60 * 1000; // +1 saat
+  } else if (powerUpId === 'double_xp') {
+    // 1 saat boyunca 2x XP
+    const now = Date.now();
+    const currentEnd = (profile as any).doubleXpUntil || 0;
+    (updated as any).doubleXpUntil = Math.max(currentEnd, now) + 60 * 60 * 1000; // +1 saat
   }
   
   return { newProfile: updated, success: true };
+};
+
+// 2x Coin aktif mi?
+export const isDoubleCoinsActive = (profile: UserProfile): boolean => {
+  return ((profile as any).doubleCoinsUntil || 0) > Date.now();
+};
+
+// 2x XP aktif mi?
+export const isDoubleXpActive = (profile: UserProfile): boolean => {
+  return ((profile as any).doubleXpUntil || 0) > Date.now();
+};
+
+// Kalan süre (ms)
+export const getDoubleCoinRemainingTime = (profile: UserProfile): number => {
+  const until = (profile as any).doubleCoinsUntil || 0;
+  return Math.max(0, until - Date.now());
+};
+
+export const getDoubleXpRemainingTime = (profile: UserProfile): number => {
+  const until = (profile as any).doubleXpUntil || 0;
+  return Math.max(0, until - Date.now());
 };
 
 export const usePowerUp = (
@@ -775,6 +806,15 @@ export const getThemePrices = (): Record<string, number> => {
     space: 900,
     desert: 500,
     neon: 1000,
+    // Yeni Temalar
+    arctic: 1200,      // Kutup - Premium
+    sakura: 1500,      // Kiraz Çiçeği - Premium
+    cyberpunk: 2000,   // Cyberpunk - Ultra Premium
+    jungle: 800,       // Orman
+    marble: 1000,      // Mermer
+    steampunk: 1800,   // Steampunk - Premium
+    galaxy: 2500,      // Galaksi - Ultra Premium
+    autumn: 600,       // Sonbahar
   };
 };
 

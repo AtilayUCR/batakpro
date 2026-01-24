@@ -12,20 +12,21 @@ import {
   resetQuests, shouldResetDailyQuests, shouldResetWeeklyQuests,
   generateDailyChallenge, shouldResetDailyChallenge, resetDailyChallenge,
   purchasePowerUp, usePowerUp, POWER_UPS,
-  purchaseGameSpeed, GAME_SPEED_PRICES
+  purchaseGameSpeed, GAME_SPEED_PRICES,
+  isDoubleCoinsActive, isDoubleXpActive
 } from './utils/coinsSystem';
 import { 
   BOT_PERSONALITIES, getThreeUniqueBotPersonalities, getBotQuote as getAdvancedBotQuote,
   BotPersonality
 } from './utils/botPersonalities';
 import { PATTERNS, THEME_PATTERNS, getPatternCSS } from './utils/patterns';
-import { 
-  loadLeaderboard, updateLeaderboard, populateWithBots, getTopPlayers,
-  Leaderboard, LeaderboardEntry 
-} from './utils/leaderboard';
+// Leaderboard kaldırıldı - Game Center entegrasyonu ile gelecek
 import {
   generateGuessGame, checkGuess, generateWeeklyQuiz, answerQuizQuestion,
-  isGuessGameExpired, isQuizExpired, GuessGame, Quiz
+  isGuessGameExpired, isQuizExpired, GuessGame, Quiz,
+  canSpinWheel, spinWheel, WHEEL_SLICES, WheelSlice, LuckyWheel,
+  generateSpeedMatch, flipSpeedMatchCard, resetUnmatchedCards, SpeedMatch,
+  generateTrumpGuess, checkTrumpGuess, isTrumpGuessExpired, TrumpGuess
 } from './utils/miniGames';
 import {
   initializeAdMob, prepareRewardedAd, showRewardedAd,
@@ -271,11 +272,6 @@ const AppContent: React.FC = () => {
   const biddingEndingRef = useRef<boolean>(false);
   
   // Liderlik tablosu
-  const [leaderboard, setLeaderboard] = useState<Leaderboard>(() => {
-    const lb = loadLeaderboard();
-    return populateWithBots(lb);
-  });
-  const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
   const [lobbyTab, setLobbyTab] = useState<'game' | 'daily' | 'shop'>('game');
   
   // Mini oyunlar
@@ -283,6 +279,16 @@ const AppContent: React.FC = () => {
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [showGuessGame, setShowGuessGame] = useState<boolean>(false);
   const [showQuiz, setShowQuiz] = useState<boolean>(false);
+  // Yeni Mini Oyunlar
+  const [showLuckyWheel, setShowLuckyWheel] = useState<boolean>(false);
+  const [wheelSpinning, setWheelSpinning] = useState<boolean>(false);
+  const [wheelResult, setWheelResult] = useState<WheelSlice | null>(null);
+  const [speedMatch, setSpeedMatch] = useState<SpeedMatch | null>(null);
+  const [showSpeedMatch, setShowSpeedMatch] = useState<boolean>(false);
+  const [speedMatchFirstCard, setSpeedMatchFirstCard] = useState<string | null>(null);
+  const [trumpGuess, setTrumpGuess] = useState<TrumpGuess | null>(null);
+  const [showTrumpGuess, setShowTrumpGuess] = useState<boolean>(false);
+  const [hintCardId, setHintCardId] = useState<string | null>(null); // Önerilen kart
   
   // AdMob
   const [isAdReady, setIsAdReady] = useState<boolean>(false);
@@ -329,6 +335,8 @@ const AppContent: React.FC = () => {
         if (!parsed.undoCount) parsed.undoCount = 0;
         if (!parsed.hintCount) parsed.hintCount = 0;
         if (!parsed.streakProtectionCount) parsed.streakProtectionCount = 0;
+        if (!parsed.doubleCoinsUntil) parsed.doubleCoinsUntil = 0;
+        if (!parsed.doubleXpUntil) parsed.doubleXpUntil = 0;
         // Yeni özellikler
         if (parsed.isOnboarded === undefined) parsed.isOnboarded = parsed.stats?.totalGames > 0; // Eski kullanıcılar için
         if (!parsed.gameHistory) parsed.gameHistory = [];
@@ -374,6 +382,8 @@ const AppContent: React.FC = () => {
       undoCount: 0,
       hintCount: 0,
       streakProtectionCount: 0,
+      doubleCoinsUntil: 0,
+      doubleXpUntil: 0,
       // Yeni özellikler
       isOnboarded: false,
       gameHistory: [],
@@ -912,6 +922,15 @@ const AppContent: React.FC = () => {
       case 'space': return { bg: 'bg-[#030712]', pattern: patternStyle, accent: '#a855f7', name: 'Uzay' };
       case 'desert': return { bg: 'bg-[#78350f]', pattern: patternStyle, accent: '#fbbf24', name: 'Çöl' };
       case 'neon': return { bg: 'bg-[#0f172a]', pattern: patternStyle, accent: '#22d3ee', name: 'Neon' };
+      // Yeni Temalar
+      case 'arctic': return { bg: 'bg-[#0f172a]', pattern: patternStyle, accent: '#38bdf8', name: 'Kutup' };
+      case 'sakura': return { bg: 'bg-[#4c1d3d]', pattern: patternStyle, accent: '#f472b6', name: 'Kiraz Çiçeği' };
+      case 'cyberpunk': return { bg: 'bg-[#0f0f1f]', pattern: patternStyle, accent: '#f0f000', name: 'Cyberpunk' };
+      case 'jungle': return { bg: 'bg-[#1a2e05]', pattern: patternStyle, accent: '#84cc16', name: 'Orman' };
+      case 'marble': return { bg: 'bg-[#1f2937]', pattern: patternStyle, accent: '#d1d5db', name: 'Mermer' };
+      case 'steampunk': return { bg: 'bg-[#422006]', pattern: patternStyle, accent: '#d97706', name: 'Steampunk' };
+      case 'galaxy': return { bg: 'bg-[#1e1b4b]', pattern: patternStyle, accent: '#c084fc', name: 'Galaksi' };
+      case 'autumn': return { bg: 'bg-[#431407]', pattern: patternStyle, accent: '#fb923c', name: 'Sonbahar' };
       default: return { bg: 'bg-[#064e3b]', pattern: patternStyle, accent: '#10b981', name: 'Klasik' };
     }
   };
@@ -1402,6 +1421,10 @@ const AppContent: React.FC = () => {
         if (perfectGame) {
           coinsEarned += COINS_REWARDS.PERFECT_GAME;
         }
+        // 2x Coin aktifse
+        if (isDoubleCoinsActive(userProfile)) {
+          coinsEarned *= 2;
+        }
       } else {
         // Kaybetme durumu
         if (isUserBatak) {
@@ -1417,6 +1440,11 @@ const AppContent: React.FC = () => {
         xpEarned += XP_REWARDS.WIN_GAME;
       }
       xpEarned += userPlayer.tricksWon * XP_REWARDS.WIN_TRICK;
+      
+      // 2x XP aktifse
+      if (isDoubleXpActive(userProfile)) {
+        xpEarned *= 2;
+      }
       
       // Batak streak güncelle
       if (isUserBatak) {
@@ -1844,15 +1872,6 @@ const AppContent: React.FC = () => {
           BAŞARIMLAR
         </button>
 
-              {/* Liderlik */}
-              <button 
-                onClick={() => setShowLeaderboard(true)}
-                className="w-full bg-white/5 border border-white/10 text-white font-bold py-4 rounded-xl hover:bg-white/10 transition-all text-sm flex items-center justify-center gap-2"
-              >
-                <Trophy size={18} className="text-yellow-400" />
-                LİDERLİK TABLOSU
-              </button>
-
               {/* Mini Oyunlar */}
               <div className="grid grid-cols-2 gap-2 mt-4">
                 <button 
@@ -1868,6 +1887,29 @@ const AppContent: React.FC = () => {
                 >
                   <span className="text-xl">📝</span>
                   HAFTALIK QUIZ <span className="text-yellow-400 text-[10px]">+250🪙</span>
+                </button>
+                {/* Yeni Mini Oyunlar */}
+                <button 
+                  onClick={() => { setWheelResult(null); setShowLuckyWheel(true); }}
+                  disabled={!canSpinWheel()}
+                  className={`bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-400/30 text-white font-bold py-3 rounded-xl text-xs flex flex-col items-center gap-1 ${!canSpinWheel() ? 'opacity-50' : ''}`}
+                >
+                  <span className="text-xl">🎰</span>
+                  ŞANS ÇARKI {canSpinWheel() ? <span className="text-green-400 text-[10px]">HAZIR!</span> : <span className="text-white/40 text-[10px]">Yarın</span>}
+                </button>
+                <button 
+                  onClick={() => { setSpeedMatch(generateSpeedMatch(6)); setSpeedMatchFirstCard(null); setShowSpeedMatch(true); }}
+                  className="bg-gradient-to-r from-cyan-500/20 to-teal-500/20 border border-cyan-400/30 text-white font-bold py-3 rounded-xl text-xs flex flex-col items-center gap-1"
+                >
+                  <span className="text-xl">⚡</span>
+                  HIZLI EŞLEŞTIR <span className="text-yellow-400 text-[10px]">+150🪙</span>
+                </button>
+                <button 
+                  onClick={() => { if (!trumpGuess || isTrumpGuessExpired(trumpGuess)) setTrumpGuess(generateTrumpGuess()); setShowTrumpGuess(true); }}
+                  className="bg-gradient-to-r from-rose-500/20 to-red-500/20 border border-rose-400/30 text-white font-bold py-3 rounded-xl text-xs flex flex-col items-center gap-1 col-span-2"
+                >
+                  <span className="text-xl">♠️</span>
+                  KOZ TAHMİNİ <span className="text-yellow-400 text-[10px]">+75🪙 (streak bonusu!)</span>
                 </button>
             </div>
         </div>
@@ -2515,7 +2557,7 @@ const AppContent: React.FC = () => {
                  <div className="space-y-3">
                    <label className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] flex items-center gap-2"><Palette size={14}/> TEMA SEÇİMİ</label>
                    <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-                      {['kiraathane', 'classic', 'casino', 'wood', 'royal', 'midnight', 'vintage', 'forest', 'ocean', 'lava', 'sunset', 'space', 'desert', 'neon'].map(t => {
+                      {['kiraathane', 'classic', 'casino', 'wood', 'royal', 'midnight', 'vintage', 'forest', 'ocean', 'lava', 'sunset', 'space', 'desert', 'neon', 'arctic', 'sakura', 'cyberpunk', 'jungle', 'marble', 'steampunk', 'galaxy', 'autumn'].map(t => {
                         const styles = getThemeStyles(t as GameTheme);
                         const isSelected = gameSettings.theme === t;
                         const isOwned = userProfile.ownedThemes.includes(t);
@@ -3173,7 +3215,7 @@ const AppContent: React.FC = () => {
               {/* Mevcut Power-Up'lar */}
               <div className="mb-6 bg-white/5 rounded-2xl p-4">
                 <h3 className="text-white font-bold text-sm mb-3">Sahip Olduklarım</h3>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-3 mb-3">
                   <div className="text-center">
                     <div className="text-2xl mb-1">↩️</div>
                     <div className="text-white text-xs font-bold">Geri Al</div>
@@ -3188,6 +3230,24 @@ const AppContent: React.FC = () => {
                     <div className="text-2xl mb-1">🛡️</div>
                     <div className="text-white text-xs font-bold">Streak Koruma</div>
                     <div className="text-emerald-400 font-black">{userProfile.streakProtectionCount || 0}</div>
+                  </div>
+                </div>
+                
+                {/* Aktif Buff'lar */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className={`text-center p-2 rounded-xl ${isDoubleCoinsActive(userProfile) ? 'bg-yellow-500/20 border border-yellow-400/30' : 'bg-white/5'}`}>
+                    <div className="text-xl mb-1">💰</div>
+                    <div className="text-white text-[10px] font-bold">2x Coin</div>
+                    <div className={`text-[10px] font-black ${isDoubleCoinsActive(userProfile) ? 'text-yellow-400' : 'text-white/40'}`}>
+                      {isDoubleCoinsActive(userProfile) ? 'AKTİF!' : 'Pasif'}
+                    </div>
+                  </div>
+                  <div className={`text-center p-2 rounded-xl ${isDoubleXpActive(userProfile) ? 'bg-purple-500/20 border border-purple-400/30' : 'bg-white/5'}`}>
+                    <div className="text-xl mb-1">⚡</div>
+                    <div className="text-white text-[10px] font-bold">2x XP</div>
+                    <div className={`text-[10px] font-black ${isDoubleXpActive(userProfile) ? 'text-purple-400' : 'text-white/40'}`}>
+                      {isDoubleXpActive(userProfile) ? 'AKTİF!' : 'Pasif'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3225,52 +3285,6 @@ const AppContent: React.FC = () => {
                     >
                       {powerUp.price} 🪙
                     </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Liderlik Tablosu Modal */}
-        {showLeaderboard && (
-          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
-            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto`}>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-black text-white italic">🏆 LİDERLİK</h2>
-                <button onClick={() => setShowLeaderboard(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
-              </div>
-              
-              {/* Tabs */}
-              <div className="flex gap-2 mb-4">
-                {['daily', 'weekly', 'allTime'].map((period, idx) => (
-                  <button key={period} className={`flex-1 py-2 rounded-xl text-xs font-bold ${idx === 2 ? 'bg-emerald-500 text-white' : 'bg-white/5 text-white/60'}`}>
-                    {period === 'daily' ? 'GÜNLÜK' : period === 'weekly' ? 'HAFTALIK' : 'TÜM ZAMANLAR'}
-                  </button>
-                ))}
-              </div>
-              
-              {/* Leaderboard List */}
-              <div className="space-y-2">
-                {getTopPlayers(leaderboard, 'allTime', 10).map((entry, idx) => (
-                  <div 
-                    key={entry.id}
-                    className={`flex items-center gap-3 p-3 rounded-xl ${idx < 3 ? 'bg-yellow-500/10 border border-yellow-400/30' : 'bg-white/5'}`}
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black ${
-                      idx === 0 ? 'bg-yellow-400 text-black' :
-                      idx === 1 ? 'bg-gray-300 text-black' :
-                      idx === 2 ? 'bg-orange-400 text-black' :
-                      'bg-white/10 text-white/60'
-                    }`}>
-                      {idx + 1}
-                    </div>
-                    <div className="text-2xl">{entry.avatar}</div>
-                    <div className="flex-1">
-                      <div className="text-white font-bold text-sm">{entry.username}</div>
-                      <div className="text-white/40 text-[10px]">Lv.{entry.level} • {entry.wins} galibiyet</div>
-                    </div>
-                    <div className="text-yellow-400 font-black">{entry.score}</div>
                   </div>
                 ))}
               </div>
@@ -3417,6 +3431,268 @@ const AppContent: React.FC = () => {
           </div>
         )}
 
+        {/* Lucky Wheel (Şans Çarkı) Modal */}
+        {showLuckyWheel && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className="bg-gradient-to-br from-yellow-900 to-orange-900 w-full max-w-sm rounded-[3rem] p-6 border border-yellow-400/30 shadow-2xl">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-black text-white italic">🎰 ŞANS ÇARKI</h2>
+                <button onClick={() => setShowLuckyWheel(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+              </div>
+              
+              {/* Çark */}
+              <div className="relative w-64 h-64 mx-auto mb-6">
+                <div 
+                  className={`w-full h-full rounded-full border-4 border-yellow-400 relative overflow-hidden ${wheelSpinning ? 'animate-spin' : ''}`}
+                  style={{ 
+                    animationDuration: '3s',
+                    background: `conic-gradient(${WHEEL_SLICES.map((s, i) => `${s.color} ${i * (360/WHEEL_SLICES.length)}deg ${(i+1) * (360/WHEEL_SLICES.length)}deg`).join(', ')})`
+                  }}
+                >
+                  {WHEEL_SLICES.map((slice, i) => (
+                    <div 
+                      key={slice.id}
+                      className="absolute text-[10px] font-black text-white drop-shadow-lg"
+                      style={{
+                        left: '50%',
+                        top: '50%',
+                        transform: `rotate(${i * (360/WHEEL_SLICES.length) + (180/WHEEL_SLICES.length)}deg) translateY(-80px)`,
+                        transformOrigin: '0 0',
+                      }}
+                    >
+                      {slice.label}
+                    </div>
+                  ))}
+                </div>
+                {/* Ok işareti */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-2 text-3xl">▼</div>
+              </div>
+              
+              {/* Sonuç */}
+              {wheelResult && (
+                <div className={`text-center py-4 px-6 rounded-2xl mb-4 ${wheelResult.type === 'empty' ? 'bg-gray-500/20' : 'bg-emerald-500/20'}`}>
+                  <div className="text-3xl mb-2">{wheelResult.label}</div>
+                  <div className="text-white font-bold">
+                    {wheelResult.type === 'coins' && `+${wheelResult.reward} Coin!`}
+                    {wheelResult.type === 'xp' && `+${wheelResult.reward} XP!`}
+                    {wheelResult.type === 'powerup' && `Power-up kazandın!`}
+                    {wheelResult.type === 'empty' && `Şansını yarın dene!`}
+                  </div>
+                </div>
+              )}
+              
+              {/* Çevir Butonu */}
+              <button
+                onClick={() => {
+                  if (wheelSpinning || wheelResult) return;
+                  setWheelSpinning(true);
+                  
+                  // 3 saniye sonra sonuç
+                  setTimeout(() => {
+                    const result = spinWheel();
+                    setWheelResult(result.slice);
+                    setWheelSpinning(false);
+                    
+                    // Ödül ver
+                    if (result.slice.type === 'coins') {
+                      setUserProfile(prev => ({
+                        ...prev,
+                        coins: prev.coins + result.slice.reward,
+                        totalCoinsEarned: prev.totalCoinsEarned + result.slice.reward,
+                      }));
+                    } else if (result.slice.type === 'xp') {
+                      setUserProfile(prev => ({
+                        ...prev,
+                        xp: prev.xp + result.slice.reward,
+                      }));
+                    } else if (result.slice.type === 'powerup') {
+                      if (result.slice.id === 'powerup_undo') {
+                        setUserProfile(prev => ({ ...prev, undoCount: prev.undoCount + 1 }));
+                      } else if (result.slice.id === 'powerup_hint') {
+                        setUserProfile(prev => ({ ...prev, hintCount: prev.hintCount + 1 }));
+                      }
+                    }
+                  }, 3000);
+                }}
+                disabled={wheelSpinning || !!wheelResult || !canSpinWheel()}
+                className={`w-full py-4 rounded-2xl font-black text-lg ${
+                  wheelSpinning || wheelResult || !canSpinWheel()
+                    ? 'bg-gray-500/30 text-white/40'
+                    : 'bg-gradient-to-r from-yellow-500 to-orange-500 text-black hover:scale-105 transition-all'
+                }`}
+              >
+                {wheelSpinning ? '🎰 Dönüyor...' : wheelResult ? '✓ Tamamlandı' : '🎰 ÇEVİR!'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Speed Match Modal */}
+        {showSpeedMatch && speedMatch && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-4 backdrop-blur-xl">
+            <div className="bg-gradient-to-br from-cyan-900 to-teal-900 w-full max-w-sm rounded-[3rem] p-5 border border-cyan-400/30 shadow-2xl">
+              <div className="flex justify-between items-center mb-3">
+                <h2 className="text-xl font-black text-white italic">⚡ HIZLI EŞLEŞTIR</h2>
+                <button onClick={() => setShowSpeedMatch(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={18}/></button>
+              </div>
+              
+              {/* Süre ve Hamle */}
+              <div className="flex justify-between mb-3 text-sm">
+                <div className="text-white/60">Hamle: <span className="text-white font-bold">{speedMatch.moves}</span></div>
+                <div className="text-white/60">Eşleşen: <span className="text-cyan-400 font-bold">{speedMatch.matchedPairs}/{speedMatch.totalPairs}</span></div>
+              </div>
+              
+              {/* Kartlar Grid */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {speedMatch.cards.map((card) => (
+                  <button
+                    key={card.id}
+                    onClick={() => {
+                      if (speedMatch.completed || card.isMatched) return;
+                      
+                      const result = flipSpeedMatchCard(speedMatch, card.id, speedMatchFirstCard);
+                      setSpeedMatch(result.game);
+                      setSpeedMatchFirstCard(result.firstFlippedId);
+                      
+                      // Eşleşmediyse kartları geri çevir
+                      if (result.isMatch === false) {
+                        setTimeout(() => {
+                          setSpeedMatch(prev => prev ? resetUnmatchedCards(prev) : null);
+                        }, 800);
+                      }
+                    }}
+                    disabled={card.isMatched || speedMatch.completed}
+                    className={`aspect-square rounded-xl text-2xl font-black transition-all ${
+                      card.isMatched 
+                        ? 'bg-emerald-500/30 border-2 border-emerald-400' 
+                        : card.isFlipped
+                          ? 'bg-white border-2 border-white'
+                          : 'bg-gradient-to-br from-cyan-600 to-teal-600 border-2 border-cyan-400/30 hover:scale-105'
+                    }`}
+                  >
+                    {(card.isFlipped || card.isMatched) ? (
+                      <span className={card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-500' : 'text-black'}>
+                        {card.suit === 'spades' ? '♠' : card.suit === 'hearts' ? '♥' : card.suit === 'diamonds' ? '♦' : '♣'}
+                        <span className="text-sm">{card.rank === 14 ? 'A' : card.rank === 13 ? 'K' : card.rank === 12 ? 'Q' : card.rank === 11 ? 'J' : card.rank}</span>
+                      </span>
+                    ) : '?'}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Tamamlandı */}
+              {speedMatch.completed && (
+                <div className="text-center py-4 px-6 rounded-2xl bg-emerald-500/20 mb-3">
+                  <div className="text-3xl mb-2">🎉</div>
+                  <div className="text-white font-bold text-lg">Tebrikler!</div>
+                  <div className="text-yellow-400 font-black text-2xl">+{speedMatch.reward} 🪙</div>
+                  <button
+                    onClick={() => {
+                      setUserProfile(prev => ({
+                        ...prev,
+                        coins: prev.coins + speedMatch.reward,
+                        totalCoinsEarned: prev.totalCoinsEarned + speedMatch.reward,
+                      }));
+                      setShowSpeedMatch(false);
+                    }}
+                    className="mt-3 bg-emerald-500 text-white font-black py-2 px-6 rounded-xl"
+                  >
+                    Ödülü Al
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Trump Guess (Koz Tahmini) Modal */}
+        {showTrumpGuess && trumpGuess && (
+          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
+            <div className="bg-gradient-to-br from-rose-900 to-red-900 w-full max-w-sm rounded-[3rem] p-6 border border-rose-400/30 shadow-2xl">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-black text-white italic">♠️ KOZ TAHMİNİ</h2>
+                <button onClick={() => setShowTrumpGuess(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
+              </div>
+              
+              {/* Streak */}
+              <div className="text-center mb-4">
+                <span className="text-white/60 text-sm">Seri: </span>
+                <span className="text-yellow-400 font-black">{trumpGuess.streak}🔥</span>
+                <span className="text-white/40 text-xs ml-2">(+{25 * trumpGuess.streak} bonus)</span>
+              </div>
+              
+              {/* Kartlar */}
+              <div className="flex justify-center gap-2 mb-6">
+                {trumpGuess.cards.map((card, idx) => (
+                  <div 
+                    key={idx}
+                    className="w-14 h-20 bg-white rounded-lg flex flex-col items-center justify-center shadow-lg"
+                  >
+                    <span className={`text-2xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-500' : 'text-black'}`}>
+                      {card.suit === 'spades' ? '♠' : card.suit === 'hearts' ? '♥' : card.suit === 'diamonds' ? '♦' : '♣'}
+                    </span>
+                    <span className="text-black font-black text-sm">
+                      {card.rank === 14 ? 'A' : card.rank === 13 ? 'K' : card.rank === 12 ? 'Q' : card.rank === 11 ? 'J' : card.rank}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              
+              {!trumpGuess.played ? (
+                <>
+                  <div className="text-center text-white/80 mb-4 text-sm">Bu kartlara bakarak koz rengini tahmin et!</div>
+                  
+                  {/* Seçenekler */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { suit: Suit.SPADES, icon: '♠', label: 'Maça', color: 'bg-slate-700' },
+                      { suit: Suit.HEARTS, icon: '♥', label: 'Kupa', color: 'bg-red-600' },
+                      { suit: Suit.DIAMONDS, icon: '♦', label: 'Karo', color: 'bg-orange-500' },
+                      { suit: Suit.CLUBS, icon: '♣', label: 'Sinek', color: 'bg-emerald-700' },
+                    ].map(({ suit, icon, label, color }) => (
+                      <button
+                        key={suit}
+                        onClick={() => {
+                          const result = checkTrumpGuess(trumpGuess, suit);
+                          setTrumpGuess(result);
+                          if (result.correct && result.reward > 0) {
+                            setUserProfile(prev => ({
+                              ...prev,
+                              coins: prev.coins + result.reward,
+                              totalCoinsEarned: prev.totalCoinsEarned + result.reward,
+                            }));
+                          }
+                        }}
+                        className={`${color} text-white font-black py-4 rounded-2xl flex flex-col items-center gap-1 hover:scale-105 transition-all`}
+                      >
+                        <span className="text-3xl">{icon}</span>
+                        <span className="text-sm">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className={`text-center py-6 px-6 rounded-2xl ${trumpGuess.correct ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
+                  <div className="text-4xl mb-2">{trumpGuess.correct ? '🎉' : '😢'}</div>
+                  <div className="text-white font-bold text-lg mb-2">
+                    {trumpGuess.correct ? 'Doğru Tahmin!' : 'Yanlış!'}
+                  </div>
+                  <div className="text-white/60 text-sm mb-2">
+                    Koz: <span className="font-black">
+                      {trumpGuess.correctTrump === 'spades' ? '♠ Maça' : 
+                       trumpGuess.correctTrump === 'hearts' ? '♥ Kupa' :
+                       trumpGuess.correctTrump === 'diamonds' ? '♦ Karo' : '♣ Sinek'}
+                    </span>
+                  </div>
+                  {trumpGuess.correct && (
+                    <div className="text-yellow-400 font-black text-2xl">+{trumpGuess.reward} 🪙</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Tema Mağazası Modal */}
         {showThemeShop && (
           <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
@@ -3427,7 +3703,7 @@ const AppContent: React.FC = () => {
               </div>
               
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                {['kiraathane', 'classic', 'casino', 'wood', 'royal', 'midnight', 'vintage', 'forest', 'ocean', 'lava', 'sunset', 'space', 'desert', 'neon']
+                {['kiraathane', 'classic', 'casino', 'wood', 'royal', 'midnight', 'vintage', 'forest', 'ocean', 'lava', 'sunset', 'space', 'desert', 'neon', 'arctic', 'sakura', 'cyberpunk', 'jungle', 'marble', 'steampunk', 'galaxy', 'autumn']
                   .map(themeId => ({
                     id: themeId,
                     price: getThemePrices()[themeId] || 0

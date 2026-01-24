@@ -898,14 +898,54 @@ export const BOT_PERSONALITIES: BotPersonality[] = [
   },
 ];
 
-// Bot kişiliğine göre random isim oluştur
+// Bot kişiliğine göre random isim oluştur - Çok geniş isim havuzu
 const PERSONALITY_NAMES: Record<string, string[]> = {
-  aggressive: ['Tosun', 'Kemal', 'Cevdet', 'Hikmet', 'Necati', 'Galip', 'Sabri', 'Yılmaz'],
-  cautious: ['Defne', 'Seda', 'Pelin', 'Melis', 'Irmak', 'Esra', 'Derya', 'Cansu'],
-  bluffer: ['Mert', 'Kaan', 'Bora', 'Sinan', 'Onur', 'Deniz', 'Cem', 'Alper'],
-  troll: ['Selin', 'Ece', 'Melis', 'Aslı', 'Duru', 'Pınar', 'Ceyda', 'Zeynep'],
-  wise: ['Halil', 'Ahmet', 'Mehmet', 'Mustafa', 'İbrahim', 'Ömer', 'Hüseyin', 'Ali'],
-  rookie: ['Ayşe', 'Fatma', 'Hatice', 'Zehra', 'Meryem', 'Emine', 'Şerife', 'Havva'],
+  aggressive: [
+    'Tosun', 'Kemal', 'Cevdet', 'Hikmet', 'Necati', 'Galip', 'Sabri', 'Yılmaz',
+    'Sedat', 'Ferhat', 'Hakan', 'Volkan', 'Tamer', 'Okan', 'Çetin', 'Erdem',
+    'Savaş', 'Koray', 'Erkan', 'Zafer', 'Serkan', 'Gökhan', 'Fatih', 'Barış',
+    'Cengiz', 'Polat', 'Cenk', 'Selim', 'Orhan', 'İlhan', 'Güven', 'Tarık',
+  ],
+  cautious: [
+    'Defne', 'Seda', 'Pelin', 'Melis', 'Irmak', 'Esra', 'Derya', 'Cansu',
+    'Elif', 'Gülay', 'Burcu', 'Sibel', 'Sevgi', 'Yasemin', 'Güneş', 'Özge',
+    'Fulya', 'Nilgün', 'Sinem', 'Ebru', 'Aylin', 'Nazlı', 'Damla', 'Begüm',
+    'Seher', 'Gülşen', 'Ceren', 'Dilek', 'Hülya', 'Nalan', 'İrem', 'Buse',
+  ],
+  bluffer: [
+    'Mert', 'Kaan', 'Bora', 'Sinan', 'Onur', 'Deniz', 'Cem', 'Alper',
+    'Burak', 'Tolga', 'Emre', 'Can', 'Oğuz', 'Umut', 'Aras', 'Utku',
+    'Taylan', 'Berkay', 'Serdar', 'Yusuf', 'Batuhan', 'Doruk', 'Eren', 'Baran',
+    'Kağan', 'Efe', 'Atlas', 'Rüzgar', 'Ayberk', 'Berke', 'Arda', 'Emir',
+  ],
+  troll: [
+    'Selin', 'Ece', 'Melis', 'Aslı', 'Duru', 'Pınar', 'Ceyda', 'Zeynep',
+    'İdil', 'Deniz', 'Sude', 'Cemre', 'Aleyna', 'Azra', 'Beril', 'Nehir',
+    'Yağmur', 'Poyraz', 'Rüzgar', 'Melisa', 'Eda', 'Funda', 'Gizem', 'Gülnur',
+    'Ceylan', 'Açelya', 'Belgin', 'Miray', 'Serra', 'Simge', 'Dilan', 'Tuana',
+  ],
+  wise: [
+    'Halil', 'Ahmet', 'Mehmet', 'Mustafa', 'İbrahim', 'Ömer', 'Hüseyin', 'Ali',
+    'Hayri', 'Nuri', 'Şaban', 'Osman', 'Celal', 'Cemil', 'Recep', 'Rıza',
+    'İsmail', 'Süleyman', 'Salih', 'Bekir', 'Hasan', 'Hamit', 'Remzi', 'Nazım',
+    'Fevzi', 'Şükrü', 'Hakkı', 'Kadir', 'Zeki', 'Saim', 'Halit', 'Sami',
+  ],
+  rookie: [
+    'Ayşe', 'Fatma', 'Hatice', 'Zehra', 'Meryem', 'Emine', 'Şerife', 'Havva',
+    'Nurten', 'Saniye', 'Naciye', 'Hanife', 'Hacer', 'Mediha', 'Saadet', 'Gülizar',
+    'Neriman', 'Safiye', 'Nezahat', 'Rukiye', 'Süheyla', 'Müberra', 'Nuriye', 'Sabiha',
+    'Makbule', 'Şefika', 'Perihan', 'Gülten', 'Birsen', 'Aynur', 'Cemile', 'Ülkü',
+  ],
+};
+
+// Lakap/Unvan ekleri
+const TITLE_SUFFIXES: Record<string, string[]> = {
+  aggressive: ['Reis', 'Abi', 'Bey', 'Paşa', 'Deli', ''],
+  cautious: ['Hanım', 'Abla', '', '', '', ''],
+  bluffer: ['', '', '', 'Abi', '', ''],
+  troll: ['', '', '', '', '', ''],
+  wise: ['Dayı', 'Amca', 'Bey', 'Usta', 'Hoca', ''],
+  rookie: ['Teyze', 'Hanım', 'Abla', '', '', ''],
 };
 
 // Rastgele kişilik seç
@@ -915,12 +955,21 @@ export const getRandomPersonality = (excludeIds: string[] = []): BotPersonality 
   return available[Math.floor(Math.random() * available.length)];
 };
 
-// Kişiliğe göre isim al
+// Kişiliğe göre isim al - Lakap/Unvan ile
 export const getNameForPersonality = (personality: BotPersonality, excludeNames: string[] = []): string => {
   const names = PERSONALITY_NAMES[personality.style] || PERSONALITY_NAMES.cautious;
+  const suffixes = TITLE_SUFFIXES[personality.style] || [''];
   const available = names.filter(n => !excludeNames.includes(n));
   if (available.length === 0) return personality.name;
-  return available[Math.floor(Math.random() * available.length)];
+  
+  const baseName = available[Math.floor(Math.random() * available.length)];
+  const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+  
+  // %40 ihtimalle unvan ekle
+  if (suffix && Math.random() < 0.4) {
+    return `${baseName} ${suffix}`;
+  }
+  return baseName;
 };
 
 // Dinamik ve bağlama duyarlı cümle al
@@ -992,3 +1041,56 @@ export const updateBotMood = (
   if (isWinning) return 'confident';
   return 'neutral';
 };
+
+
+// Kart sayma/strateji bazlı sözler
+export const CARD_COUNTING_QUOTES: string[] = [
+  "Hmm, kozlar bitmek üzere...",
+  "Bu elde güçlü kartlar geldi!",
+  "As'lar nerede acaba?",
+  "Son kozlar kimdeydi?",
+  "Papaz çıktı mı henüz?",
+  "Kupa bitmek üzere gibi...",
+  "Dikkat, büyük kartlar geliyor!",
+  "Bu pozisyonu tanıyorum...",
+  "Kalan kartları sayalım...",
+  "Elinde ne var acaba?",
+  "Bu el çok önemli!",
+  "Son şans!",
+  "Risikli bir hamle olacak...",
+  "Şimdi sıkı dur!",
+  "Beklenmedik bir kart!",
+];
+
+// Blöf/psikolojik savaş sözleri
+export const BLUFF_QUOTES: string[] = [
+  "Bence pas geç...",
+  "Çok güçlü elim var!",
+  "Yüksek ihale vermeyin bence.",
+  "Bu el benim!",
+  "Emin misin bu hamlenden?",
+  "Hmm, ilginç bir seçim...",
+  "Beklediğim buydu!",
+  "Şimdi düşün bakalım...",
+  "Tuzağıma düştün!",
+  "Plan işliyor...",
+  "Tam istediğim gibi!",
+  "Şaşırmadın mı?",
+];
+
+// Duruma göre dinamik söz getir
+export const getContextualQuote = (
+  context: 'cardCounting' | 'bluff' | 'random'
+): string => {
+  switch (context) {
+    case 'cardCounting':
+      return CARD_COUNTING_QUOTES[Math.floor(Math.random() * CARD_COUNTING_QUOTES.length)];
+    case 'bluff':
+      return BLUFF_QUOTES[Math.floor(Math.random() * BLUFF_QUOTES.length)];
+    default:
+      return Math.random() > 0.5
+        ? CARD_COUNTING_QUOTES[Math.floor(Math.random() * CARD_COUNTING_QUOTES.length)]
+        : BLUFF_QUOTES[Math.floor(Math.random() * BLUFF_QUOTES.length)];
+  }
+};
+

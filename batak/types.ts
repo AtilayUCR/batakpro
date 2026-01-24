@@ -203,6 +203,8 @@ export interface UserProfile {
   undoCount: number; // Kullanılabilir undo sayısı
   hintCount: number; // Kullanılabilir ipucu sayısı
   streakProtectionCount: number; // Streak koruma sayısı
+  doubleCoinsUntil: number; // 2x Coin aktif bitiş zamanı (timestamp)
+  doubleXpUntil: number; // 2x XP aktif bitiş zamanı (timestamp)
   // Yeni özellikler
   isOnboarded: boolean; // Onboarding tamamlandı mı
   gameHistory: GameHistoryEntry[]; // Son 5 oyun
@@ -242,7 +244,11 @@ export interface PlayedCard {
 
 export type CardBack = 'blue' | 'red' | 'black' | 'orange' | 'green' | 'purple' | 'gold';
 
-export type GameTheme = 'classic' | 'casino' | 'wood' | 'royal' | 'midnight' | 'forest' | 'ocean' | 'lava' | 'sunset' | 'space' | 'desert' | 'neon' | 'vintage' | 'kiraathane';
+export type GameTheme = 
+  | 'classic' | 'casino' | 'wood' | 'royal' | 'midnight' | 'forest' | 'ocean' 
+  | 'lava' | 'sunset' | 'space' | 'desert' | 'neon' | 'vintage' | 'kiraathane'
+  // Yeni Temalar
+  | 'arctic' | 'sakura' | 'cyberpunk' | 'jungle' | 'marble' | 'steampunk' | 'galaxy' | 'autumn';
 
 export type SoundPack = 'classic' | 'modern' | 'retro' | 'arcade';
 

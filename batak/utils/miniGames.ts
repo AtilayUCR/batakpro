@@ -282,3 +282,187 @@ export const isGuessGameExpired = (game: GuessGame): boolean => {
   return new Date() >= new Date(game.expiresAt);
 };
 
+
+// ============================================
+// --- LUCKY WHEEL (ŞANS ÇARKI) ---
+// ============================================
+
+export interface WheelSlice {
+  id: string;
+  reward: number;
+  type: 'coins' | 'xp' | 'powerup' | 'empty';
+  label: string;
+  color: string;
+  probability: number;
+}
+
+export interface LuckyWheel {
+  id: string;
+  lastSpinDate: string | null;
+  totalSpins: number;
+  totalWinnings: number;
+}
+
+export const WHEEL_SLICES: WheelSlice[] = [
+  { id: 'coins_50', reward: 50, type: 'coins', label: '50 🪙', color: '#22c55e', probability: 25 },
+  { id: 'coins_100', reward: 100, type: 'coins', label: '100 🪙', color: '#eab308', probability: 20 },
+  { id: 'coins_200', reward: 200, type: 'coins', label: '200 🪙', color: '#f97316', probability: 10 },
+  { id: 'coins_500', reward: 500, type: 'coins', label: '500 🪙', color: '#ef4444', probability: 3 },
+  { id: 'xp_25', reward: 25, type: 'xp', label: '25 XP', color: '#8b5cf6', probability: 15 },
+  { id: 'xp_50', reward: 50, type: 'xp', label: '50 XP', color: '#a855f7', probability: 10 },
+  { id: 'powerup_undo', reward: 1, type: 'powerup', label: '↩️ Undo', color: '#06b6d4', probability: 5 },
+  { id: 'powerup_hint', reward: 1, type: 'powerup', label: '💡 İpucu', color: '#14b8a6', probability: 5 },
+  { id: 'empty', reward: 0, type: 'empty', label: 'Boş 😢', color: '#64748b', probability: 7 },
+];
+
+export const canSpinWheel = (): boolean => {
+  const stored = localStorage.getItem('batakLuckyWheel');
+  if (!stored) return true;
+  const wheel: LuckyWheel = JSON.parse(stored);
+  if (!wheel.lastSpinDate) return true;
+  return new Date(wheel.lastSpinDate).toDateString() !== new Date().toDateString();
+};
+
+export const spinWheel = (): { slice: WheelSlice; wheel: LuckyWheel } => {
+  const totalProbability = WHEEL_SLICES.reduce((sum, s) => sum + s.probability, 0);
+  let random = Math.random() * totalProbability;
+  let selectedSlice = WHEEL_SLICES[0];
+  for (const slice of WHEEL_SLICES) {
+    random -= slice.probability;
+    if (random <= 0) { selectedSlice = slice; break; }
+  }
+  const stored = localStorage.getItem('batakLuckyWheel');
+  let wheel: LuckyWheel = stored ? JSON.parse(stored) : { id: 'wheel_1', lastSpinDate: null, totalSpins: 0, totalWinnings: 0 };
+  wheel.lastSpinDate = new Date().toISOString();
+  wheel.totalSpins += 1;
+  if (selectedSlice.type === 'coins') wheel.totalWinnings += selectedSlice.reward;
+  localStorage.setItem('batakLuckyWheel', JSON.stringify(wheel));
+  return { slice: selectedSlice, wheel };
+};
+
+// ============================================
+// --- SPEED MATCH ---
+// ============================================
+
+export interface SpeedMatchCard {
+  id: string;
+  suit: Suit;
+  rank: Rank;
+  isMatched: boolean;
+  isFlipped: boolean;
+}
+
+export interface SpeedMatch {
+  id: string;
+  cards: SpeedMatchCard[];
+  matchedPairs: number;
+  totalPairs: number;
+  moves: number;
+  startTime: number;
+  endTime: number | null;
+  completed: boolean;
+  reward: number;
+  bestTime: number | null;
+}
+
+export const generateSpeedMatch = (pairs: number = 6): SpeedMatch => {
+  const suits = [Suit.SPADES, Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS];
+  const ranks = [Rank.ACE, Rank.KING, Rank.QUEEN, Rank.JACK, Rank.TEN, Rank.NINE];
+  const selectedCards: { suit: Suit; rank: Rank }[] = [];
+  while (selectedCards.length < pairs) {
+    const suit = suits[Math.floor(Math.random() * suits.length)];
+    const rank = ranks[Math.floor(Math.random() * ranks.length)];
+    if (!selectedCards.some(c => c.suit === suit && c.rank === rank)) {
+      selectedCards.push({ suit, rank });
+    }
+  }
+  const cards: SpeedMatchCard[] = [];
+  selectedCards.forEach((card, idx) => {
+    cards.push({ id: `card_${idx}_a`, suit: card.suit, rank: card.rank, isMatched: false, isFlipped: false });
+    cards.push({ id: `card_${idx}_b`, suit: card.suit, rank: card.rank, isMatched: false, isFlipped: false });
+  });
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cards[i], cards[j]] = [cards[j], cards[i]];
+  }
+  const stored = localStorage.getItem('batakSpeedMatchBest');
+  return { id: `speedmatch_${Date.now()}`, cards, matchedPairs: 0, totalPairs: pairs, moves: 0, startTime: Date.now(), endTime: null, completed: false, reward: 150, bestTime: stored ? parseInt(stored) : null };
+};
+
+export const flipSpeedMatchCard = (game: SpeedMatch, cardId: string, firstFlippedId: string | null): { game: SpeedMatch; isMatch: boolean | null; firstFlippedId: string | null } => {
+  const cardIndex = game.cards.findIndex(c => c.id === cardId);
+  if (cardIndex === -1 || game.cards[cardIndex].isMatched || game.cards[cardIndex].isFlipped) {
+    return { game, isMatch: null, firstFlippedId };
+  }
+  const updatedCards = [...game.cards];
+  updatedCards[cardIndex] = { ...updatedCards[cardIndex], isFlipped: true };
+  if (!firstFlippedId) {
+    return { game: { ...game, cards: updatedCards }, isMatch: null, firstFlippedId: cardId };
+  }
+  const firstCard = updatedCards.find(c => c.id === firstFlippedId)!;
+  const secondCard = updatedCards[cardIndex];
+  const isMatch = firstCard.suit === secondCard.suit && firstCard.rank === secondCard.rank;
+  if (isMatch) {
+    updatedCards.forEach(c => { if (c.id === firstFlippedId || c.id === cardId) c.isMatched = true; });
+  }
+  const matchedPairs = isMatch ? game.matchedPairs + 1 : game.matchedPairs;
+  const completed = matchedPairs >= game.totalPairs;
+  let updatedGame: SpeedMatch = { ...game, cards: updatedCards, matchedPairs, moves: game.moves + 1, completed, endTime: completed ? Date.now() : null };
+  if (completed) {
+    const timeTaken = (updatedGame.endTime! - updatedGame.startTime) / 1000;
+    updatedGame.reward = timeTaken < 30 ? 300 : timeTaken < 60 ? 200 : 100;
+    if (!updatedGame.bestTime || timeTaken < updatedGame.bestTime) {
+      localStorage.setItem('batakSpeedMatchBest', String(Math.floor(timeTaken)));
+    }
+  }
+  return { game: updatedGame, isMatch, firstFlippedId: null };
+};
+
+export const resetUnmatchedCards = (game: SpeedMatch): SpeedMatch => {
+  return { ...game, cards: game.cards.map(c => ({ ...c, isFlipped: c.isMatched })) };
+};
+
+// ============================================
+// --- TRUMP GUESS (KOZ TAHMİNİ) ---
+// ============================================
+
+export interface TrumpGuess {
+  id: string;
+  cards: Card[];
+  correctTrump: Suit;
+  played: boolean;
+  correct: boolean;
+  reward: number;
+  expiresAt: string;
+  streak: number;
+}
+
+export const generateTrumpGuess = (): TrumpGuess => {
+  const suits = [Suit.SPADES, Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS];
+  const ranks = [Rank.ACE, Rank.KING, Rank.QUEEN, Rank.JACK, Rank.TEN, Rank.NINE];
+  const cards: Card[] = [];
+  for (let i = 0; i < 4; i++) {
+    cards.push({ id: `trump_card_${i}`, suit: suits[Math.floor(Math.random() * suits.length)], rank: ranks[Math.floor(Math.random() * ranks.length)] });
+  }
+  const suitCounts = suits.map(s => ({ suit: s, count: cards.filter(c => c.suit === s).length }));
+  const maxCount = Math.max(...suitCounts.map(s => s.count));
+  const possibleTrumps = suitCounts.filter(s => s.count === maxCount).map(s => s.suit);
+  const correctTrump = possibleTrumps[Math.floor(Math.random() * possibleTrumps.length)];
+  const stored = localStorage.getItem('batakTrumpGuessStreak');
+  const streak = stored ? parseInt(stored) : 0;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  return { id: `trumpguess_${Date.now()}`, cards, correctTrump, played: false, correct: false, reward: 75 + (streak * 25), expiresAt: tomorrow.toISOString(), streak };
+};
+
+export const checkTrumpGuess = (game: TrumpGuess, selectedSuit: Suit): TrumpGuess => {
+  const correct = selectedSuit === game.correctTrump;
+  const newStreak = correct ? game.streak + 1 : 0;
+  localStorage.setItem('batakTrumpGuessStreak', String(newStreak));
+  return { ...game, played: true, correct, streak: newStreak, reward: correct ? game.reward : 0 };
+};
+
+export const isTrumpGuessExpired = (game: TrumpGuess): boolean => {
+  return new Date() >= new Date(game.expiresAt);
+};
