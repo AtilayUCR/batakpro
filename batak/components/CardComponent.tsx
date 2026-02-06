@@ -47,7 +47,8 @@ export const CardComponent: React.FC<CardProps> = ({
 
   if (hidden) {
     let backColorClass = 'bg-emerald-800 border-emerald-600';
-    let pattern = "bg-[url('https://www.transparenttextures.com/patterns/diagmonds-light.png')]";
+    // Inline SVG pattern - external URL yerine lokal pattern kullan
+    let pattern = "bg-[url(\"data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 8L8 0L16 8L8 16z' fill='%23ffffff' fill-opacity='0.1'/%3E%3C/svg%3E\")]";
 
     switch(cardBack) {
         case 'red': backColorClass = 'bg-rose-800 border-rose-600'; break;
