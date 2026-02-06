@@ -1042,8 +1042,7 @@ export const updateBotMood = (
   return 'neutral';
 };
 
-
-// Kart sayma/strateji bazlı sözler
+// Kart sayma/strateji bazlı sözler - botların akıllı gözükmesi için
 export const CARD_COUNTING_QUOTES: string[] = [
   "Hmm, kozlar bitmek üzere...",
   "Bu elde güçlü kartlar geldi!",
@@ -1093,4 +1092,3 @@ export const getContextualQuote = (
         : BLUFF_QUOTES[Math.floor(Math.random() * BLUFF_QUOTES.length)];
   }
 };
-

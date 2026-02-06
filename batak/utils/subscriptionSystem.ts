@@ -1,22 +1,10 @@
-// Subscription Sistemi - iOS App Store In-App Purchase
-// Product ID'ler App Store Connect'te oluşturulmalı
-
 // ============================================
-// SUBSCRIPTION PRODUCT ID'LERİ
+// SUBSCRIPTION SİSTEMİ - DEVRE DIŞI
+// İlk release'de IAP olmadan gideceğiz
+// Sonra App Store / Google Play entegrasyonu ile aktif edilecek
 // ============================================
-export const SUBSCRIPTION_PRODUCTS = {
-  ios: {
-    weekly: '21890626', // Haftalık subscription
-    monthly: '21890868', // Aylık subscription
-  },
-  android: {
-    // Android ID'leri sonra eklenecek
-    weekly: 'batakpro.premium.weekly',
-    monthly: 'batakpro.premium.monthly',
-  },
-};
 
-// Subscription fiyatları (gösterim için)
+// Subscription fiyatları (gösterim için - ileride kullanılacak)
 export const SUBSCRIPTION_PRICES = {
   weekly: {
     amount: 29.99,
@@ -31,7 +19,7 @@ export const SUBSCRIPTION_PRICES = {
 };
 
 // ============================================
-// SUBSCRIPTION STATUS
+// SUBSCRIPTION STATUS - MOCK (Her zaman false döner)
 // ============================================
 export interface SubscriptionStatus {
   isSubscribed: boolean;
@@ -41,45 +29,81 @@ export interface SubscriptionStatus {
 }
 
 export const getSubscriptionStatus = (): SubscriptionStatus => {
-  const stored = localStorage.getItem('batakSubscription');
-  if (!stored) {
-    return { isSubscribed: false, productId: null, expiresAt: null, tier: null };
-  }
-  
-  const data = JSON.parse(stored);
-  
-  // Süre dolmuş mu kontrol et
-  if (data.expiresAt && data.expiresAt < Date.now()) {
-    // Subscription expired
-    localStorage.removeItem('batakSubscription');
-    return { isSubscribed: false, productId: null, expiresAt: null, tier: null };
-  }
-  
-  return data;
+  // IAP devre dışı - her zaman false döner
+  return { isSubscribed: false, productId: null, expiresAt: null, tier: null };
 };
 
-export const setSubscriptionStatus = (
-  productId: string,
-  tier: 'weekly' | 'monthly',
-  durationDays: number
-): void => {
-  const expiresAt = Date.now() + (durationDays * 24 * 60 * 60 * 1000);
-  const status: SubscriptionStatus = {
-    isSubscribed: true,
-    productId,
-    expiresAt,
-    tier,
+// ============================================
+// MOCK FUNCTIONS - Hiçbir şey yapmaz
+// ============================================
+
+export const initializeStore = async (): Promise<boolean> => {
+  console.log('IAP disabled for initial release');
+  return false;
+};
+
+export const purchaseSubscription = async (_tier: 'weekly' | 'monthly'): Promise<boolean> => {
+  console.log('IAP disabled - purchase not available');
+  return false;
+};
+
+export const restorePurchases = async (): Promise<boolean> => {
+  console.log('IAP disabled - restore not available');
+  return false;
+};
+
+export const getProductInfo = async (tier: 'weekly' | 'monthly'): Promise<{
+  price: string;
+  title: string;
+  description: string;
+} | null> => {
+  const priceInfo = SUBSCRIPTION_PRICES[tier];
+  return {
+    price: `${priceInfo.currency}${priceInfo.amount}/${priceInfo.period}`,
+    title: `Batak Pro+ ${tier === 'weekly' ? 'Haftalık' : 'Aylık'}`,
+    description: 'Reklamsız oyna, günlük bonus kazan!',
   };
-  localStorage.setItem('batakSubscription', JSON.stringify(status));
 };
 
-export const clearSubscription = (): void => {
-  localStorage.removeItem('batakSubscription');
+// Premium kullanıcı mı? - Her zaman false
+export const isPremiumUser = (): boolean => {
+  return false;
+};
+
+// Günlük Undo hakkı - Premium olmadığı için 0
+export const getPremiumDailyUndos = (): number => {
+  return 0;
+};
+
+export const usePremiumUndo = (): boolean => {
+  return false;
+};
+
+// Günlük bonus coin - Premium olmadığı için 0
+export const claimPremiumDailyCoins = (): number => {
+  return 0;
+};
+
+export const canClaimPremiumDailyCoins = (): boolean => {
+  return false;
 };
 
 // ============================================
-// IN-APP PURCHASE FUNCTIONS
+// ORIJINAL KOD - YORUM SATIRINDA (İLERİDE AKTİF EDİLECEK)
 // ============================================
+
+/*
+// SUBSCRIPTION PRODUCT ID'LERİ
+export const SUBSCRIPTION_PRODUCTS = {
+  ios: {
+    weekly: '21890626', // Haftalık subscription
+    monthly: '21890868', // Aylık subscription
+  },
+  android: {
+    weekly: 'batakpro.premium.weekly',
+    monthly: 'batakpro.premium.monthly',
+  },
+};
 
 // Platform kontrolü
 const getPlatform = (): 'ios' | 'android' | 'web' => {
@@ -96,7 +120,7 @@ const getPlatform = (): 'ios' | 'android' | 'web' => {
 // Subscription Store hazır mı?
 let storeReady = false;
 
-export const initializeStore = async (): Promise<boolean> => {
+export const initializeStore_ORIGINAL = async (): Promise<boolean> => {
   const platform = getPlatform();
   
   if (platform === 'web') {
@@ -106,12 +130,15 @@ export const initializeStore = async (): Promise<boolean> => {
   
   try {
     // cordova-plugin-purchase kullanarak store'u başlat
-    const { store } = await import('cordova-plugin-purchase');
+    // @ts-ignore - Dynamic import için
+    const storeModule = await import('cordova-plugin-purchase').catch(() => null);
     
-    if (!store) {
-      console.error('Store not available');
+    if (!storeModule || !storeModule.store) {
+      console.warn('Store module not available - IAP disabled');
       return false;
     }
+    
+    const { store } = storeModule;
     
     // Ürünleri kaydet
     store.register([
@@ -137,7 +164,7 @@ export const initializeStore = async (): Promise<boolean> => {
         // Subscription'ı aktif et
         const tier = product.id.includes('weekly') ? 'weekly' : 'monthly';
         const days = tier === 'weekly' ? 7 : 30;
-        setSubscriptionStatus(product.id, tier, days);
+        setSubscriptionStatus_ORIGINAL(product.id, tier, days);
         
         product.finish();
       })
@@ -160,164 +187,22 @@ export const initializeStore = async (): Promise<boolean> => {
   }
 };
 
-// Subscription satın al
-export const purchaseSubscription = async (tier: 'weekly' | 'monthly'): Promise<boolean> => {
-  const platform = getPlatform();
-  
-  if (platform === 'web') {
-    console.error('Cannot purchase on web');
-    return false;
-  }
-  
-  if (!storeReady) {
-    console.error('Store not ready');
-    return false;
-  }
-  
-  try {
-    const { store } = await import('cordova-plugin-purchase');
-    const productId = SUBSCRIPTION_PRODUCTS[platform][tier];
-    
-    console.log('Purchasing:', productId);
-    store.order(productId);
-    
-    return true;
-  } catch (error) {
-    console.error('Purchase failed:', error);
-    return false;
-  }
+export const setSubscriptionStatus_ORIGINAL = (
+  productId: string,
+  tier: 'weekly' | 'monthly',
+  durationDays: number
+): void => {
+  const expiresAt = Date.now() + (durationDays * 24 * 60 * 60 * 1000);
+  const status: SubscriptionStatus = {
+    isSubscribed: true,
+    productId,
+    expiresAt,
+    tier,
+  };
+  localStorage.setItem('batakSubscription', JSON.stringify(status));
 };
 
-// Satın alımları geri yükle
-export const restorePurchases = async (): Promise<boolean> => {
-  const platform = getPlatform();
-  
-  if (platform === 'web') {
-    return false;
-  }
-  
-  try {
-    const { store } = await import('cordova-plugin-purchase');
-    await store.refresh();
-    return true;
-  } catch (error) {
-    console.error('Restore failed:', error);
-    return false;
-  }
+export const clearSubscription = (): void => {
+  localStorage.removeItem('batakSubscription');
 };
-
-// Ürün bilgilerini al
-export const getProductInfo = async (tier: 'weekly' | 'monthly'): Promise<{
-  price: string;
-  title: string;
-  description: string;
-} | null> => {
-  const platform = getPlatform();
-  
-  if (platform === 'web') {
-    // Web için varsayılan fiyatları göster
-    const priceInfo = SUBSCRIPTION_PRICES[tier];
-    return {
-      price: `${priceInfo.currency}${priceInfo.amount}/${priceInfo.period}`,
-      title: `Batak Pro+ ${tier === 'weekly' ? 'Haftalık' : 'Aylık'}`,
-      description: 'Reklamsız oyna, günlük bonus kazan!',
-    };
-  }
-  
-  try {
-    const { store } = await import('cordova-plugin-purchase');
-    const productId = SUBSCRIPTION_PRODUCTS[platform][tier];
-    const product = store.get(productId);
-    
-    if (product) {
-      return {
-        price: product.price,
-        title: product.title,
-        description: product.description,
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Failed to get product info:', error);
-    return null;
-  }
-};
-
-// ============================================
-// PREMIUM ÖZELLİKLERİ
-// ============================================
-
-// Premium kullanıcı mı?
-export const isPremiumUser = (): boolean => {
-  const status = getSubscriptionStatus();
-  return status.isSubscribed;
-};
-
-// Günlük Undo hakkı (Premium için)
-export const getPremiumDailyUndos = (): number => {
-  if (!isPremiumUser()) return 0;
-  
-  const today = new Date().toDateString();
-  const stored = localStorage.getItem('batakPremiumDailyUndos');
-  
-  if (stored) {
-    const data = JSON.parse(stored);
-    if (data.date === today) {
-      return data.remaining;
-    }
-  }
-  
-  // Yeni gün - 5 undo hakkı (Premium)
-  const newData = { date: today, remaining: 5 };
-  localStorage.setItem('batakPremiumDailyUndos', JSON.stringify(newData));
-  return 3;
-};
-
-export const usePremiumUndo = (): boolean => {
-  const remaining = getPremiumDailyUndos();
-  if (remaining <= 0) return false;
-  
-  const today = new Date().toDateString();
-  localStorage.setItem('batakPremiumDailyUndos', JSON.stringify({
-    date: today,
-    remaining: remaining - 1,
-  }));
-  
-  return true;
-};
-
-// Günlük bonus coin (Premium için)
-export const claimPremiumDailyCoins = (): number => {
-  if (!isPremiumUser()) return 0;
-  
-  const today = new Date().toDateString();
-  const stored = localStorage.getItem('batakPremiumDailyCoins');
-  
-  if (stored) {
-    const data = JSON.parse(stored);
-    if (data.date === today && data.claimed) {
-      return 0; // Bugün zaten alınmış
-    }
-  }
-  
-  // 500 coin ver (Premium)
-  localStorage.setItem('batakPremiumDailyCoins', JSON.stringify({
-    date: today,
-    claimed: true,
-  }));
-  
-  return 500;
-};
-
-export const canClaimPremiumDailyCoins = (): boolean => {
-  if (!isPremiumUser()) return false;
-  
-  const today = new Date().toDateString();
-  const stored = localStorage.getItem('batakPremiumDailyCoins');
-  
-  if (!stored) return true;
-  
-  const data = JSON.parse(stored);
-  return data.date !== today || !data.claimed;
-};
+*/

@@ -466,67 +466,111 @@ const AppContent: React.FC = () => {
   // AdMob, Analytics, Crashlytics, Push ve Store başlatma
   useEffect(() => {
     const setupServices = async () => {
-      // Firebase Analytics başlat
-      await initializeAnalytics();
-      
-      // Firebase Crashlytics başlat
-      await initializeCrashlytics();
-      setCrashlyticsUserId(userProfile.username || 'anonymous');
-      
-      // Push Notifications başlat
-      await initializePushNotifications();
-      
-      // AdMob başlat (iOS'ta ATT izni de istenir)
-      const initialized = await initializeAdMob();
-      if (initialized) {
-        await prepareRewardedAd();
-        await prepareInterstitialAd();
-        setIsAdReady(true);
+      try {
+        // Firebase Analytics başlat
+        try {
+          await initializeAnalytics();
+        } catch (e) {
+          console.error('Analytics init failed:', e);
+        }
+        
+        // Firebase Crashlytics başlat
+        try {
+          await initializeCrashlytics();
+          setCrashlyticsUserId(userProfile.username || 'anonymous');
+        } catch (e) {
+          console.error('Crashlytics init failed:', e);
+        }
+        
+        // Push Notifications başlat
+        try {
+          await initializePushNotifications();
+        } catch (e) {
+          console.error('Push notifications init failed:', e);
+        }
+        
+        // AdMob başlat (iOS'ta ATT izni de istenir)
+        try {
+          const initialized = await initializeAdMob();
+          if (initialized) {
+            await prepareRewardedAd();
+            await prepareInterstitialAd();
+            setIsAdReady(true);
+          }
+        } catch (e) {
+          console.error('AdMob init failed:', e);
+        }
+        
+        // In-App Purchase store'u başlat
+        try {
+          await initializeStore();
+        } catch (e) {
+          console.error('Store init failed:', e);
+        }
+        
+        // User properties güncelle
+        try {
+          setUserProperties({
+            level: userProfile.level,
+            totalGames: userProfile.stats?.totalGames || 0,
+            isPremium: isPremiumUser(),
+          });
+          
+          // Coin bakiyesi ve user segment logla
+          logCoinBalance(userProfile.coins);
+        } catch (e) {
+          console.error('User properties update failed:', e);
+        }
+        
+        // Performans: Sesleri önceden yükle
+        try {
+          const soundPack = SOUND_PACKS[gameSettings.soundPack];
+          soundCache.preload(soundPack.deal);
+          soundCache.preload(soundPack.play);
+        } catch (e) {
+          console.error('Sound preload failed:', e);
+        }
+        
+        // Performans: Eski verileri temizle
+        try {
+          cleanupOldData(30); // 30 günden eski verileri temizle
+        } catch (e) {
+          console.error('Cleanup failed:', e);
+        }
+        
+        // Güvenlik: Coin bakiyesi doğrulama
+        try {
+          const isValid = validateCoinBalance(
+            userProfile.coins,
+            userProfile.totalCoinsEarned || 0,
+            userProfile.totalCoinsSpent || 0
+          );
+          if (!isValid) {
+            console.warn('Coin balance anomaly detected');
+          }
+        } catch (e) {
+          console.error('Coin validation failed:', e);
+        }
+        
+        // İlk oyun tarihinden bu yana geçen gün
+        try {
+          const firstPlayDate = localStorage.getItem('batakFirstPlayDate');
+          const daysSinceFirstPlay = firstPlayDate 
+            ? Math.floor((Date.now() - new Date(firstPlayDate).getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
+          
+          updateUserSegment({
+            daysSinceFirstPlay,
+            totalCoinsEarned: userProfile.totalCoinsEarned || 0,
+            totalGames: userProfile.stats?.totalGames || 0,
+            isPremium: isPremiumUser(),
+          });
+        } catch (e) {
+          console.error('User segment update failed:', e);
+        }
+      } catch (error) {
+        console.error('Critical error in setupServices:', error);
       }
-      
-      // In-App Purchase store'u başlat
-      await initializeStore();
-      
-      // User properties güncelle
-      setUserProperties({
-        level: userProfile.level,
-        totalGames: userProfile.gamesPlayed,
-        isPremium: isPremiumUser(),
-      });
-      
-      // Coin bakiyesi ve user segment logla
-      logCoinBalance(userProfile.coins);
-      
-      // Performans: Sesleri önceden yükle
-      const soundPack = SOUND_PACKS[gameSettings.soundPack];
-      soundCache.preload(soundPack.deal);
-      soundCache.preload(soundPack.play);
-      
-      // Performans: Eski verileri temizle
-      cleanupOldData(30); // 30 günden eski verileri temizle
-      
-      // Güvenlik: Coin bakiyesi doğrulama
-      const isValid = validateCoinBalance(
-        userProfile.coins,
-        userProfile.totalCoinsEarned || 0,
-        userProfile.totalCoinsSpent || 0
-      );
-      if (!isValid) {
-        console.warn('Coin balance anomaly detected');
-      }
-      
-      // İlk oyun tarihinden bu yana geçen gün
-      const firstPlayDate = localStorage.getItem('batakFirstPlayDate');
-      const daysSinceFirstPlay = firstPlayDate 
-        ? Math.floor((Date.now() - new Date(firstPlayDate).getTime()) / (1000 * 60 * 60 * 24))
-        : 0;
-      
-      updateUserSegment({
-        daysSinceFirstPlay,
-        totalCoinsEarned: userProfile.totalCoinsEarned || 0,
-        totalGames: userProfile.gamesPlayed,
-        isPremium: isPremiumUser(),
-      });
     };
     setupServices();
     
@@ -735,6 +779,9 @@ const AppContent: React.FC = () => {
           (Date.now() - new Date(firstPlayDate).getTime()) / (1000 * 60 * 60 * 24)
         );
         
+        // IAP devre dışı olduğu için special offer'lar kapalı
+        // İleride aktif edilecek:
+        /*
         // 3. gün teklifi
         if (daysSinceFirstPlay >= 3 && daysSinceFirstPlay < 7 && offerShown !== 'day3') {
           setSpecialOfferType('day3');
@@ -747,6 +794,7 @@ const AppContent: React.FC = () => {
           setShowSpecialOffer(true);
           logSpecialOfferShown('day14');
         }
+        */
       }
     }
   }, [phase]);
@@ -1131,7 +1179,8 @@ const AppContent: React.FC = () => {
               setPhase(GamePhase.PLAYING);
               setCurrentPlayerIdx(bidWinnerId);
             } else if (winner) {
-              // Kullanıcı koz seçmeli
+              // Kullanıcı koz seçmeli - ÖNEMLİ: isBidding'i kapat ki modal görünsün
+              setIsBidding(false);
               setShowTrumpSelection(true);
             }
           } else {
@@ -1889,6 +1938,7 @@ const AppContent: React.FC = () => {
                   HAFTALIK QUIZ <span className="text-yellow-400 text-[10px]">+250🪙</span>
                 </button>
                 {/* Yeni Mini Oyunlar */}
+                {/* ŞANS ÇARKI - Tasarım iyileştirilene kadar devre dışı
                 <button 
                   onClick={() => { setWheelResult(null); setShowLuckyWheel(true); }}
                   disabled={!canSpinWheel()}
@@ -1897,6 +1947,7 @@ const AppContent: React.FC = () => {
                   <span className="text-xl">🎰</span>
                   ŞANS ÇARKI {canSpinWheel() ? <span className="text-green-400 text-[10px]">HAZIR!</span> : <span className="text-white/40 text-[10px]">Yarın</span>}
                 </button>
+                */}
                 <button 
                   onClick={() => { setSpeedMatch(generateSpeedMatch(6)); setSpeedMatchFirstCard(null); setShowSpeedMatch(true); }}
                   className="bg-gradient-to-r from-cyan-500/20 to-teal-500/20 border border-cyan-400/30 text-white font-bold py-3 rounded-xl text-xs flex flex-col items-center gap-1"
@@ -1911,7 +1962,7 @@ const AppContent: React.FC = () => {
                   <span className="text-xl">♠️</span>
                   KOZ TAHMİNİ <span className="text-yellow-400 text-[10px]">+75🪙 (streak bonusu!)</span>
                 </button>
-            </div>
+          </div>
         </div>
       )}
       
@@ -1923,7 +1974,7 @@ const AppContent: React.FC = () => {
                 className="w-full bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-400/30 text-white font-black py-4 rounded-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"
         >
                 <Zap size={18} className="text-yellow-400" />
-          POWER-UP'LAR
+          GÜÇLENDİRİCİLER
           {(userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount) > 0 && (
                   <span className="bg-emerald-500 text-white text-[10px] px-2 py-0.5 rounded-full ml-1">
               {userProfile.undoCount + userProfile.hintCount + userProfile.streakProtectionCount}
@@ -1941,34 +1992,33 @@ const AppContent: React.FC = () => {
         </button>
 
               {/* Reklam Seçenekleri */}
+              {adFreeTimeLeft === 0 && canWatchRewardedAd() && (
+                <button 
+                  onClick={() => handleWatchAd('adfree30')}
+                  disabled={adRewardPending !== null}
+                  className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  🎬 REKLAM İZLE = 30 DK REKLAMSIZ
+                </button>
+              )}
+              {/* Coin için reklam izleme - reklamsız sürede de aktif */}
+              {canWatchRewardedAd() && (
+                <button 
+                  onClick={() => handleWatchAd('coins')}
+                  disabled={adRewardPending !== null}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-3 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  🎬 REKLAM İZLE = 50 COİN <span className="text-white/60 text-[10px]">({getRemainingRewardedAds()} kaldı)</span>
+                </button>
+              )}
               {adFreeTimeLeft === 0 && (
-                <>
-                  {canWatchRewardedAd() && (
-        <button 
-                      onClick={() => handleWatchAd('adfree30')}
-                      disabled={adRewardPending !== null}
-                      className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      🎬 REKLAM İZLE = 30 DK REKLAMSIZ
-        </button>
-                  )}
-                  {canWatchRewardedAd() && (
-        <button 
-                      onClick={() => handleWatchAd('coins')}
-                      disabled={adRewardPending !== null}
-                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-3 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      🎬 REKLAM İZLE = 50 COİN <span className="text-white/60 text-[10px]">({getRemainingRewardedAds()} kaldı)</span>
-        </button>
-                  )}
-                  <button 
-                    onClick={() => setShowAdFreeShop(true)}
-                    className="w-full bg-white/5 border border-white/10 text-white font-bold py-3 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
-                  >
-                    <Coins size={14} className="text-yellow-400" />
-                    COİN İLE REKLAMSIZ SATIN AL
-                  </button>
-                </>
+                <button 
+                  onClick={() => setShowAdFreeShop(true)}
+                  className="w-full bg-white/5 border border-white/10 text-white font-bold py-3 rounded-xl hover:bg-white/10 transition-all text-xs flex items-center justify-center gap-2"
+                >
+                  <Coins size={14} className="text-yellow-400" />
+                  COİN İLE REKLAMSIZ SATIN AL
+                </button>
               )}
 
               {/* Reklamsız durum */}
@@ -2703,7 +2753,8 @@ const AppContent: React.FC = () => {
                    </div>
                  )}
                  
-                 {/* Premium Butonu */}
+                 {/* Premium Butonu - IAP aktif edilince açılacak */}
+                 {/* 
                  <button 
                    onClick={() => {
                      setShowSettings(false);
@@ -2715,6 +2766,7 @@ const AppContent: React.FC = () => {
                    <span className="text-xl">👑</span>
                    BATAK PRO+ OL
                  </button>
+                 */}
 
                  <button onClick={() => setShowSettings(false)} className="w-full bg-white text-emerald-900 py-5 rounded-2xl font-black shadow-xl uppercase tracking-tighter active:scale-95 transition-all">KAYDET</button>
               </div>
@@ -3208,7 +3260,7 @@ const AppContent: React.FC = () => {
           <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
             <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto`}>
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-black text-white italic">POWER-UP'LAR</h2>
+                <h2 className="text-2xl font-black text-white italic">GÜÇLENDİRİCİLER</h2>
                 <button onClick={() => setShowPowerUps(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
               </div>
               
@@ -3431,101 +3483,7 @@ const AppContent: React.FC = () => {
           </div>
         )}
 
-        {/* Lucky Wheel (Şans Çarkı) Modal */}
-        {showLuckyWheel && (
-          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
-            <div className="bg-gradient-to-br from-yellow-900 to-orange-900 w-full max-w-sm rounded-[3rem] p-6 border border-yellow-400/30 shadow-2xl">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-black text-white italic">🎰 ŞANS ÇARKI</h2>
-                <button onClick={() => setShowLuckyWheel(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
-              </div>
-              
-              {/* Çark */}
-              <div className="relative w-64 h-64 mx-auto mb-6">
-                <div 
-                  className={`w-full h-full rounded-full border-4 border-yellow-400 relative overflow-hidden ${wheelSpinning ? 'animate-spin' : ''}`}
-                  style={{ 
-                    animationDuration: '3s',
-                    background: `conic-gradient(${WHEEL_SLICES.map((s, i) => `${s.color} ${i * (360/WHEEL_SLICES.length)}deg ${(i+1) * (360/WHEEL_SLICES.length)}deg`).join(', ')})`
-                  }}
-                >
-                  {WHEEL_SLICES.map((slice, i) => (
-                    <div 
-                      key={slice.id}
-                      className="absolute text-[10px] font-black text-white drop-shadow-lg"
-                      style={{
-                        left: '50%',
-                        top: '50%',
-                        transform: `rotate(${i * (360/WHEEL_SLICES.length) + (180/WHEEL_SLICES.length)}deg) translateY(-80px)`,
-                        transformOrigin: '0 0',
-                      }}
-                    >
-                      {slice.label}
-                    </div>
-                  ))}
-                </div>
-                {/* Ok işareti */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-2 text-3xl">▼</div>
-              </div>
-              
-              {/* Sonuç */}
-              {wheelResult && (
-                <div className={`text-center py-4 px-6 rounded-2xl mb-4 ${wheelResult.type === 'empty' ? 'bg-gray-500/20' : 'bg-emerald-500/20'}`}>
-                  <div className="text-3xl mb-2">{wheelResult.label}</div>
-                  <div className="text-white font-bold">
-                    {wheelResult.type === 'coins' && `+${wheelResult.reward} Coin!`}
-                    {wheelResult.type === 'xp' && `+${wheelResult.reward} XP!`}
-                    {wheelResult.type === 'powerup' && `Power-up kazandın!`}
-                    {wheelResult.type === 'empty' && `Şansını yarın dene!`}
-                  </div>
-                </div>
-              )}
-              
-              {/* Çevir Butonu */}
-              <button
-                onClick={() => {
-                  if (wheelSpinning || wheelResult) return;
-                  setWheelSpinning(true);
-                  
-                  // 3 saniye sonra sonuç
-                  setTimeout(() => {
-                    const result = spinWheel();
-                    setWheelResult(result.slice);
-                    setWheelSpinning(false);
-                    
-                    // Ödül ver
-                    if (result.slice.type === 'coins') {
-                      setUserProfile(prev => ({
-                        ...prev,
-                        coins: prev.coins + result.slice.reward,
-                        totalCoinsEarned: prev.totalCoinsEarned + result.slice.reward,
-                      }));
-                    } else if (result.slice.type === 'xp') {
-                      setUserProfile(prev => ({
-                        ...prev,
-                        xp: prev.xp + result.slice.reward,
-                      }));
-                    } else if (result.slice.type === 'powerup') {
-                      if (result.slice.id === 'powerup_undo') {
-                        setUserProfile(prev => ({ ...prev, undoCount: prev.undoCount + 1 }));
-                      } else if (result.slice.id === 'powerup_hint') {
-                        setUserProfile(prev => ({ ...prev, hintCount: prev.hintCount + 1 }));
-                      }
-                    }
-                  }, 3000);
-                }}
-                disabled={wheelSpinning || !!wheelResult || !canSpinWheel()}
-                className={`w-full py-4 rounded-2xl font-black text-lg ${
-                  wheelSpinning || wheelResult || !canSpinWheel()
-                    ? 'bg-gray-500/30 text-white/40'
-                    : 'bg-gradient-to-r from-yellow-500 to-orange-500 text-black hover:scale-105 transition-all'
-                }`}
-              >
-                {wheelSpinning ? '🎰 Dönüyor...' : wheelResult ? '✓ Tamamlandı' : '🎰 ÇEVİR!'}
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Lucky Wheel (Şans Çarkı) Modal - Tasarım iyileştirilene kadar devre dışı */}
 
         {/* Speed Match Modal */}
         {showSpeedMatch && speedMatch && (

@@ -19,6 +19,12 @@ enum TrackingAuthorizationStatus {
 }
 
 // ============================================
+// ============================================
+// GELIŞTIRME MODU - Test reklamları için true yap
+// ÖNEMLİ: Production'a çıkarken false yapılmalı!
+// ============================================
+const IS_DEVELOPMENT = true; // TODO: Production'da false yap
+
 // AD UNIT ID'LERİ - PRODUCTION
 // ============================================
 const AD_CONFIG = {
@@ -179,8 +185,8 @@ export const initializeAdMob = async (): Promise<boolean> => {
     }
     
     await AdMob.initialize({
-      // Production mode - tüm platformlar için gerçek reklamlar
-      initializeForTesting: false,
+      // Development modda test reklamları göster
+      initializeForTesting: IS_DEVELOPMENT,
     });
     isInitialized = true;
     console.log('AdMob initialized successfully (PRODUCTION)');
@@ -213,7 +219,7 @@ export const showBannerAd = async (): Promise<boolean> => {
       adSize: BannerAdSize.ADAPTIVE_BANNER,
       position: BannerAdPosition.BOTTOM_CENTER,
       margin: 0,
-      isTesting: false, // Production mode
+      isTesting: IS_DEVELOPMENT, // Development modda test reklamları
     });
     
     isBannerShowing = true;
@@ -254,7 +260,7 @@ export const prepareRewardedAd = async (): Promise<boolean> => {
     const platform = getPlatform();
     await AdMob.prepareRewardVideoAd({
       adId: AD_CONFIG[platform].rewarded,
-      isTesting: false, // Production mode
+      isTesting: IS_DEVELOPMENT, // Development modda test reklamları
     });
     return true;
   } catch (error) {
@@ -301,7 +307,7 @@ export const prepareInterstitialAd = async (): Promise<boolean> => {
     const platform = getPlatform();
     await AdMob.prepareInterstitial({
       adId: AD_CONFIG[platform].interstitial,
-      isTesting: false, // Production mode
+      isTesting: IS_DEVELOPMENT, // Development modda test reklamları
     });
     return true;
   } catch (error) {

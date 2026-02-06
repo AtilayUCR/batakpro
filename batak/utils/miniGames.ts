@@ -282,7 +282,6 @@ export const isGuessGameExpired = (game: GuessGame): boolean => {
   return new Date() >= new Date(game.expiresAt);
 };
 
-
 // ============================================
 // --- LUCKY WHEEL (ŞANS ÇARKI) ---
 // ============================================
@@ -293,7 +292,7 @@ export interface WheelSlice {
   type: 'coins' | 'xp' | 'powerup' | 'empty';
   label: string;
   color: string;
-  probability: number;
+  probability: number; // 0-100 arası
 }
 
 export interface LuckyWheel {
@@ -303,6 +302,7 @@ export interface LuckyWheel {
   totalWinnings: number;
 }
 
+// Çark dilimleri
 export const WHEEL_SLICES: WheelSlice[] = [
   { id: 'coins_50', reward: 50, type: 'coins', label: '50 🪙', color: '#22c55e', probability: 25 },
   { id: 'coins_100', reward: 100, type: 'coins', label: '100 🪙', color: '#eab308', probability: 20 },
@@ -315,33 +315,57 @@ export const WHEEL_SLICES: WheelSlice[] = [
   { id: 'empty', reward: 0, type: 'empty', label: 'Boş 😢', color: '#64748b', probability: 7 },
 ];
 
+// Günlük spin hakkı var mı?
 export const canSpinWheel = (): boolean => {
   const stored = localStorage.getItem('batakLuckyWheel');
   if (!stored) return true;
+  
   const wheel: LuckyWheel = JSON.parse(stored);
   if (!wheel.lastSpinDate) return true;
-  return new Date(wheel.lastSpinDate).toDateString() !== new Date().toDateString();
+  
+  const lastSpin = new Date(wheel.lastSpinDate).toDateString();
+  const today = new Date().toDateString();
+  
+  return lastSpin !== today;
 };
 
+// Çarkı çevir ve sonuç al
 export const spinWheel = (): { slice: WheelSlice; wheel: LuckyWheel } => {
+  // Olasılık bazlı seçim
   const totalProbability = WHEEL_SLICES.reduce((sum, s) => sum + s.probability, 0);
   let random = Math.random() * totalProbability;
+  
   let selectedSlice = WHEEL_SLICES[0];
   for (const slice of WHEEL_SLICES) {
     random -= slice.probability;
-    if (random <= 0) { selectedSlice = slice; break; }
+    if (random <= 0) {
+      selectedSlice = slice;
+      break;
+    }
   }
+  
+  // Wheel state güncelle
   const stored = localStorage.getItem('batakLuckyWheel');
-  let wheel: LuckyWheel = stored ? JSON.parse(stored) : { id: 'wheel_1', lastSpinDate: null, totalSpins: 0, totalWinnings: 0 };
+  let wheel: LuckyWheel = stored ? JSON.parse(stored) : {
+    id: 'wheel_1',
+    lastSpinDate: null,
+    totalSpins: 0,
+    totalWinnings: 0,
+  };
+  
   wheel.lastSpinDate = new Date().toISOString();
   wheel.totalSpins += 1;
-  if (selectedSlice.type === 'coins') wheel.totalWinnings += selectedSlice.reward;
+  if (selectedSlice.type === 'coins') {
+    wheel.totalWinnings += selectedSlice.reward;
+  }
+  
   localStorage.setItem('batakLuckyWheel', JSON.stringify(wheel));
+  
   return { slice: selectedSlice, wheel };
 };
 
 // ============================================
-// --- SPEED MATCH ---
+// --- SPEED MATCH (HIZLI EŞLEŞTIRME) ---
 // ============================================
 
 export interface SpeedMatchCard {
@@ -365,65 +389,154 @@ export interface SpeedMatch {
   bestTime: number | null;
 }
 
+// Speed Match oyunu oluştur
 export const generateSpeedMatch = (pairs: number = 6): SpeedMatch => {
   const suits = [Suit.SPADES, Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS];
   const ranks = [Rank.ACE, Rank.KING, Rank.QUEEN, Rank.JACK, Rank.TEN, Rank.NINE];
+  
+  // Rastgele kartlar seç
   const selectedCards: { suit: Suit; rank: Rank }[] = [];
   while (selectedCards.length < pairs) {
     const suit = suits[Math.floor(Math.random() * suits.length)];
     const rank = ranks[Math.floor(Math.random() * ranks.length)];
+    
+    // Aynı kart yoksa ekle
     if (!selectedCards.some(c => c.suit === suit && c.rank === rank)) {
       selectedCards.push({ suit, rank });
     }
   }
+  
+  // Her kartı çiftleyip karıştır
   const cards: SpeedMatchCard[] = [];
   selectedCards.forEach((card, idx) => {
-    cards.push({ id: `card_${idx}_a`, suit: card.suit, rank: card.rank, isMatched: false, isFlipped: false });
-    cards.push({ id: `card_${idx}_b`, suit: card.suit, rank: card.rank, isMatched: false, isFlipped: false });
+    cards.push({
+      id: `card_${idx}_a`,
+      suit: card.suit,
+      rank: card.rank,
+      isMatched: false,
+      isFlipped: false,
+    });
+    cards.push({
+      id: `card_${idx}_b`,
+      suit: card.suit,
+      rank: card.rank,
+      isMatched: false,
+      isFlipped: false,
+    });
   });
+  
+  // Karıştır
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [cards[i], cards[j]] = [cards[j], cards[i]];
   }
+  
+  // Best time
   const stored = localStorage.getItem('batakSpeedMatchBest');
-  return { id: `speedmatch_${Date.now()}`, cards, matchedPairs: 0, totalPairs: pairs, moves: 0, startTime: Date.now(), endTime: null, completed: false, reward: 150, bestTime: stored ? parseInt(stored) : null };
+  const bestTime = stored ? parseInt(stored) : null;
+  
+  return {
+    id: `speedmatch_${Date.now()}`,
+    cards,
+    matchedPairs: 0,
+    totalPairs: pairs,
+    moves: 0,
+    startTime: Date.now(),
+    endTime: null,
+    completed: false,
+    reward: 150, // Base ödül
+    bestTime,
+  };
 };
 
-export const flipSpeedMatchCard = (game: SpeedMatch, cardId: string, firstFlippedId: string | null): { game: SpeedMatch; isMatch: boolean | null; firstFlippedId: string | null } => {
+// Kart çevir ve eşleşme kontrolü
+export const flipSpeedMatchCard = (
+  game: SpeedMatch, 
+  cardId: string, 
+  firstFlippedId: string | null
+): { game: SpeedMatch; isMatch: boolean | null; firstFlippedId: string | null } => {
   const cardIndex = game.cards.findIndex(c => c.id === cardId);
   if (cardIndex === -1 || game.cards[cardIndex].isMatched || game.cards[cardIndex].isFlipped) {
     return { game, isMatch: null, firstFlippedId };
   }
-  const updatedCards = [...game.cards];
+  
+  // Deep copy kartları
+  let updatedCards = game.cards.map(c => ({ ...c }));
   updatedCards[cardIndex] = { ...updatedCards[cardIndex], isFlipped: true };
+  
   if (!firstFlippedId) {
-    return { game: { ...game, cards: updatedCards }, isMatch: null, firstFlippedId: cardId };
+    // İlk kart çevrildi
+    return {
+      game: { ...game, cards: updatedCards },
+      isMatch: null,
+      firstFlippedId: cardId,
+    };
   }
+  
+  // İkinci kart çevrildi - eşleşme kontrolü
   const firstCard = updatedCards.find(c => c.id === firstFlippedId)!;
   const secondCard = updatedCards[cardIndex];
+  
   const isMatch = firstCard.suit === secondCard.suit && firstCard.rank === secondCard.rank;
+  
   if (isMatch) {
-    updatedCards.forEach(c => { if (c.id === firstFlippedId || c.id === cardId) c.isMatched = true; });
+    // Eşleşti
+    updatedCards.forEach(c => {
+      if (c.id === firstFlippedId || c.id === cardId) {
+        c.isMatched = true;
+      }
+    });
   }
+  
   const matchedPairs = isMatch ? game.matchedPairs + 1 : game.matchedPairs;
   const completed = matchedPairs >= game.totalPairs;
-  let updatedGame: SpeedMatch = { ...game, cards: updatedCards, matchedPairs, moves: game.moves + 1, completed, endTime: completed ? Date.now() : null };
+  
+  let updatedGame: SpeedMatch = {
+    ...game,
+    cards: updatedCards,
+    matchedPairs,
+    moves: game.moves + 1,
+    completed,
+    endTime: completed ? Date.now() : null,
+  };
+  
+  // Ödül hesapla
   if (completed) {
     const timeTaken = (updatedGame.endTime! - updatedGame.startTime) / 1000;
-    updatedGame.reward = timeTaken < 30 ? 300 : timeTaken < 60 ? 200 : 100;
+    // Hızlı tamamlama bonusu
+    if (timeTaken < 30) {
+      updatedGame.reward = 300;
+    } else if (timeTaken < 60) {
+      updatedGame.reward = 200;
+    } else {
+      updatedGame.reward = 100;
+    }
+    
+    // En iyi süre
     if (!updatedGame.bestTime || timeTaken < updatedGame.bestTime) {
       localStorage.setItem('batakSpeedMatchBest', String(Math.floor(timeTaken)));
     }
   }
-  return { game: updatedGame, isMatch, firstFlippedId: null };
+  
+  return {
+    game: updatedGame,
+    isMatch,
+    firstFlippedId: null,
+  };
 };
 
+// Eşleşmeyen kartları geri çevir
 export const resetUnmatchedCards = (game: SpeedMatch): SpeedMatch => {
-  return { ...game, cards: game.cards.map(c => ({ ...c, isFlipped: c.isMatched })) };
+  const updatedCards = game.cards.map(c => ({
+    ...c,
+    isFlipped: c.isMatched ? true : false,
+  }));
+  
+  return { ...game, cards: updatedCards };
 };
 
 // ============================================
-// --- TRUMP GUESS (KOZ TAHMİNİ) ---
+// --- KOZ TAHMİNİ ---
 // ============================================
 
 export interface TrumpGuess {
@@ -437,32 +550,70 @@ export interface TrumpGuess {
   streak: number;
 }
 
+// Koz tahmini oyunu oluştur
 export const generateTrumpGuess = (): TrumpGuess => {
   const suits = [Suit.SPADES, Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS];
-  const ranks = [Rank.ACE, Rank.KING, Rank.QUEEN, Rank.JACK, Rank.TEN, Rank.NINE];
+  const ranks = [Rank.ACE, Rank.KING, Rank.QUEEN, Rank.JACK, Rank.TEN, Rank.NINE, Rank.EIGHT, Rank.SEVEN];
+  
+  // 4 rastgele kart oluştur
   const cards: Card[] = [];
   for (let i = 0; i < 4; i++) {
-    cards.push({ id: `trump_card_${i}`, suit: suits[Math.floor(Math.random() * suits.length)], rank: ranks[Math.floor(Math.random() * ranks.length)] });
+    const suit = suits[Math.floor(Math.random() * suits.length)];
+    const rank = ranks[Math.floor(Math.random() * ranks.length)];
+    cards.push({
+      id: `trump_card_${i}`,
+      suit,
+      rank,
+    });
   }
-  const suitCounts = suits.map(s => ({ suit: s, count: cards.filter(c => c.suit === s).length }));
+  
+  // Kozu belirle (en çok tekrar eden suit veya rastgele)
+  const suitCounts = suits.map(s => ({
+    suit: s,
+    count: cards.filter(c => c.suit === s).length,
+  }));
   const maxCount = Math.max(...suitCounts.map(s => s.count));
   const possibleTrumps = suitCounts.filter(s => s.count === maxCount).map(s => s.suit);
   const correctTrump = possibleTrumps[Math.floor(Math.random() * possibleTrumps.length)];
+  
+  // Streak bilgisi
   const stored = localStorage.getItem('batakTrumpGuessStreak');
   const streak = stored ? parseInt(stored) : 0;
+  
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(0, 0, 0, 0);
-  return { id: `trumpguess_${Date.now()}`, cards, correctTrump, played: false, correct: false, reward: 75 + (streak * 25), expiresAt: tomorrow.toISOString(), streak };
+  
+  return {
+    id: `trumpguess_${Date.now()}`,
+    cards,
+    correctTrump,
+    played: false,
+    correct: false,
+    reward: 75 + (streak * 25), // Streak bonusu
+    expiresAt: tomorrow.toISOString(),
+    streak,
+  };
 };
 
+// Koz tahmini kontrol
 export const checkTrumpGuess = (game: TrumpGuess, selectedSuit: Suit): TrumpGuess => {
   const correct = selectedSuit === game.correctTrump;
+  
+  // Streak güncelle
   const newStreak = correct ? game.streak + 1 : 0;
   localStorage.setItem('batakTrumpGuessStreak', String(newStreak));
-  return { ...game, played: true, correct, streak: newStreak, reward: correct ? game.reward : 0 };
+  
+  return {
+    ...game,
+    played: true,
+    correct,
+    streak: newStreak,
+    reward: correct ? game.reward : 0,
+  };
 };
 
+// Koz tahmini süresi doldu mu
 export const isTrumpGuessExpired = (game: TrumpGuess): boolean => {
   return new Date() >= new Date(game.expiresAt);
 };
