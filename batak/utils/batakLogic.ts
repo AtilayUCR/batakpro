@@ -576,15 +576,26 @@ export const calculateRoundScore = (
       }
       
       if (player.tricksWon < player.currentBid) {
-        let penalty = -player.currentBid * 10;
-        if (rules.onikiBatar && player.currentBid === 12 && player.tricksWon === 0) {
-          penalty = -120;
+        if (rules.batakZorunlulugu) {
+          let penalty = -player.currentBid * 10;
+          
+          // Yanlış sayma cezası
+          if (rules.yanlisSaymaCezasi) {
+            const missedBy = player.currentBid - player.tricksWon;
+            penalty -= missedBy * 5;
+          }
+          
+          if (rules.onikiBatar && player.currentBid === 12 && player.tricksWon === 0) {
+            penalty = -120;
+          }
+          if (rules.macaCezasi && player.tricksWon === 0) {
+            penalty *= 1.5;
+          }
+          scores[idx] = Math.floor(penalty);
+          batakPlayers.push(idx);
+        } else {
+          scores[idx] = player.tricksWon * 5;
         }
-        if (rules.macaCezasi && player.tricksWon === 0) {
-          penalty *= 1.5;
-        }
-        scores[idx] = Math.floor(penalty);
-        batakPlayers.push(idx);
       } else {
         scores[idx] = player.currentBid * 10;
       }
@@ -624,21 +635,43 @@ export const calculateRoundScore = (
       
       if (player.tricksWon < player.currentBid) {
         // Batak
-        let penalty = -player.currentBid * 10;
-        
-        if (rules.onikiBatar && player.currentBid === 12 && player.tricksWon === 0) {
-          penalty = -120; // 12 batak özel ceza
+        if (rules.batakZorunlulugu) {
+          // Batak zorunlu - tam ceza uygulanır
+          let penalty = -player.currentBid * 10;
+          
+          // Yanlış sayma cezası - ihaleyi ne kadar kaçırdıysan ekstra ceza
+          if (rules.yanlisSaymaCezasi) {
+            const missedBy = player.currentBid - player.tricksWon;
+            penalty -= missedBy * 5; // Her kaçırılan el için -5 ekstra
+          }
+          
+          if (rules.onikiBatar && player.currentBid === 12 && player.tricksWon === 0) {
+            penalty = -120; // 12 batak özel ceza
+          }
+          
+          if (rules.macaCezasi && player.tricksWon === 0) {
+            penalty *= 1.5; // Maça cezası
+          }
+          
+          scores[idx] = Math.floor(penalty);
+          batakPlayers.push(idx);
+        } else {
+          // Batak zorunlu değil - sadece aldığı elin puanı (pozitif olabilir)
+          scores[idx] = player.tricksWon * 5; // Her el için 5 puan
         }
-        
-        if (rules.macaCezasi && player.tricksWon === 0) {
-          penalty *= 1.5; // Maça cezası
-        }
-        
-        scores[idx] = Math.floor(penalty);
-        batakPlayers.push(idx);
       } else {
-        // Başarılı
-        scores[idx] = player.currentBid * 10;
+        // Başarılı - ihaleyi tutturdu
+        let score = player.currentBid * 10;
+        
+        // Yanlış sayma cezası aktifse, fazla el alınca bonus yok (sadece ihale puanı)
+        // Değilse normal puan
+        if (!rules.yanlisSaymaCezasi) {
+          // Fazla el bonusu (opsiyonel - bazı varyantlarda var)
+          // const extraTricks = player.tricksWon - player.currentBid;
+          // score += extraTricks * 2;
+        }
+        
+        scores[idx] = score;
       }
       
       if (scores[idx] > maxScore) {

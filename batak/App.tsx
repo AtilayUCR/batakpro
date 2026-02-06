@@ -1990,26 +1990,26 @@ const AppContent: React.FC = () => {
                 <Palette size={18} className="text-purple-400" />
                 TEMA MAĞAZASI
         </button>
-
+      
               {/* Reklam Seçenekleri */}
               {adFreeTimeLeft === 0 && canWatchRewardedAd() && (
-                <button 
+        <button 
                   onClick={() => handleWatchAd('adfree30')}
                   disabled={adRewardPending !== null}
                   className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   🎬 REKLAM İZLE = 30 DK REKLAMSIZ
-                </button>
+        </button>
               )}
               {/* Coin için reklam izleme - reklamsız sürede de aktif */}
               {canWatchRewardedAd() && (
-                <button 
+        <button 
                   onClick={() => handleWatchAd('coins')}
                   disabled={adRewardPending !== null}
                   className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-3 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   🎬 REKLAM İZLE = 50 COİN <span className="text-white/60 text-[10px]">({getRemainingRewardedAds()} kaldı)</span>
-                </button>
+        </button>
               )}
               {adFreeTimeLeft === 0 && (
                 <button 
@@ -2497,6 +2497,7 @@ const AppContent: React.FC = () => {
                   { key: 'ilkElKozYasak', label: 'İlk El Koz Yasak', desc: 'İlk elde koz atılamaz' },
                   { key: 'macaCezasi', label: 'Maça Cezası', desc: '0 el alana ek ceza' },
                   { key: 'batakZorunlulugu', label: 'Batak Zorunlu', desc: 'İhale tutturulmalı' },
+                  { key: 'yanlisSaymaCezasi', label: 'Yanlış Sayma', desc: 'Kaçırılan el başına -5' },
                   { key: 'onikiBatar', label: '12 Batar', desc: '12 ihale özel ceza' },
                   { key: 'zorunluYukseltme', label: 'Zorunlu Yükseltme', desc: 'Daha yüksek kart atmalı' },
                   { key: 'bonusEl', label: 'Bonus El', desc: 'Son el +20 puan' },
