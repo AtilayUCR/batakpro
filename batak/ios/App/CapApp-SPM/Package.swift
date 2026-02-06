@@ -18,8 +18,7 @@ let package = Package(
         .package(name: "CapacitorFirebaseCrashlytics", path: "../../../node_modules/@capacitor-firebase/crashlytics"),
         .package(name: "CapacitorApp", path: "../../../node_modules/@capacitor/app"),
         .package(name: "CapacitorPushNotifications", path: "../../../node_modules/@capacitor/push-notifications"),
-        .package(name: "CapacitorShare", path: "../../../node_modules/@capacitor/share"),
-        .package(name: "CordovaPluginPurchase", path: "../../capacitor-cordova-ios-plugins/sources/CordovaPluginPurchase")
+        .package(name: "CapacitorShare", path: "../../../node_modules/@capacitor/share")
     ],
     targets: [
         .target(
@@ -33,8 +32,7 @@ let package = Package(
                 .product(name: "CapacitorFirebaseCrashlytics", package: "CapacitorFirebaseCrashlytics"),
                 .product(name: "CapacitorApp", package: "CapacitorApp"),
                 .product(name: "CapacitorPushNotifications", package: "CapacitorPushNotifications"),
-                .product(name: "CapacitorShare", package: "CapacitorShare"),
-                .product(name: "CordovaPluginPurchase", package: "CordovaPluginPurchase")
+                .product(name: "CapacitorShare", package: "CapacitorShare")
             ]
         )
     ]
