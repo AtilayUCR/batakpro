@@ -3,18 +3,15 @@
 // Android: Haftada 1 kez (daha agresif)
 
 import { InAppReview } from '@capacitor-community/in-app-review';
+import { Capacitor } from '@capacitor/core';
 
 // ============================================
-// PLATFORM TESPİTİ
+// PLATFORM TESPİTİ - Capacitor native API (iPad dahil doğru algılar)
 // ============================================
 const getPlatform = (): 'ios' | 'android' | 'web' => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  if (userAgent.includes('iphone') || userAgent.includes('ipad')) {
-    return 'ios';
-  }
-  if (userAgent.includes('android')) {
-    return 'android';
-  }
+  const platform = Capacitor.getPlatform();
+  if (platform === 'ios') return 'ios';
+  if (platform === 'android') return 'android';
   return 'web';
 };
 

@@ -65,12 +65,8 @@ export interface ShareResult {
 
 // Genel davet paylaşımı
 export const shareInvite = async (referralCode: string, username: string): Promise<ShareResult> => {
-  const appStoreUrl = 'https://apps.apple.com/app/batak-pro/id6740013498';
-  const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.batakpro.app';
-  
-  // Platform'a göre URL seç
-  const platform = Capacitor.getPlatform();
-  const storeUrl = platform === 'ios' ? appStoreUrl : playStoreUrl;
+  // Store URL'leri v2'de eklenecek
+  const storeUrl = '';
   
   const shareText = `🃏 Batak Pro ile profesyonel batak oynuyorum! 
     
@@ -108,11 +104,8 @@ export const shareVictory = async (params: {
   username: string;
   referralCode: string;
 }): Promise<ShareResult> => {
-  const appStoreUrl = 'https://apps.apple.com/app/batak-pro/id6740013498';
-  const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.batakpro.app';
-  
-  const platform = Capacitor.getPlatform();
-  const storeUrl = platform === 'ios' ? appStoreUrl : playStoreUrl;
+  // Store URL'leri v2'de eklenecek
+  const storeUrl = '';
   
   const shareText = `🏆 Batak Pro'da ${params.mode} modunda kazandım!
   
@@ -149,11 +142,8 @@ export const shareBatakVictory = async (params: {
   username: string;
   referralCode: string;
 }): Promise<ShareResult> => {
-  const appStoreUrl = 'https://apps.apple.com/app/batak-pro/id6740013498';
-  const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.batakpro.app';
-  
-  const platform = Capacitor.getPlatform();
-  const storeUrl = platform === 'ios' ? appStoreUrl : playStoreUrl;
+  // Store URL'leri v2'de eklenecek
+  const storeUrl = '';
   
   const shareText = `🔥 Batak Pro'da rakibimi BATAK yaptım!
 

@@ -36,28 +36,21 @@ import {
   getAdFreeStatus, setAdFreeTime, getRemainingAdFreeTime, formatRemainingTime,
   AD_FREE_PACKAGES, purchaseAdFreeWithCoins,
   incrementGameCount, markInterstitialShown, canShowInterstitialAd, incrementInterstitialAdCount,
-  isFirstGameOfDay, claimFirstGameBonus, markDayPlayed
+  isFirstGameOfDay, claimFirstGameBonus, markDayPlayed,
+  getBannerHeight
 } from './utils/adMobSystem';
 import {
-  initializeStore, purchaseSubscription, restorePurchases,
-  getSubscriptionStatus, isPremiumUser, 
-  getPremiumDailyUndos, usePremiumUndo,
-  claimPremiumDailyCoins, canClaimPremiumDailyCoins,
-  SUBSCRIPTION_PRICES
+  initializeStore, isPremiumUser
 } from './utils/subscriptionSystem';
 import {
   initializeAnalytics, logGameStart, logGameEnd, logGameModePlay,
   logRewardedAdWatched, logInterstitialShown, logDailyRewardClaimed,
   logLevelUp, logOnboardingCompleted, logTrumpSelected, logCoinEarned,
   logCoinSpent, logSettingChanged, logScreenView, setUserProperties,
-  logCoinBalance, logSubscriptionPurchased, logAdFreePurchasedWithCoins,
-  logSpecialOfferShown, logSpecialOfferResponse, logPremiumModalOpened,
-  logRewardedAdClicked, updateUserSegment, logReferralShare
+  logCoinBalance, logAdFreePurchasedWithCoins,
+  logRewardedAdClicked, updateUserSegment
 } from './utils/analyticsSystem';
-import {
-  getReferralCode, getReferralStats, shareInvite, shareVictory,
-  canClaimDailyShareBonus, claimDailyShareBonus, REFERRAL_REWARDS
-} from './utils/referralSystem';
+// Referral sistemi v2'de aktif edilecek
 import {
   recordCoinTransaction, validateCoinBalance, detectAnomaly,
   checkRateLimit, RATE_LIMITS, secureStorage
@@ -296,11 +289,8 @@ const AppContent: React.FC = () => {
   const [adRewardPending, setAdRewardPending] = useState<'coins' | 'double' | 'powerup' | 'adfree30' | null>(null);
   const [adFreeTimeLeft, setAdFreeTimeLeft] = useState<number>(0);
   const [showAdFreeShop, setShowAdFreeShop] = useState<boolean>(false);
-  const [showPremiumModal, setShowPremiumModal] = useState<boolean>(false);
   const [firstGameBonusClaimed, setFirstGameBonusClaimed] = useState<boolean>(false);
-  const [showSpecialOffer, setShowSpecialOffer] = useState<boolean>(false);
-  const [specialOfferType, setSpecialOfferType] = useState<'day3' | 'day14' | null>(null);
-  const [showReferralModal, setShowReferralModal] = useState<boolean>(false);
+  // showReferralModal kaldırıldı - v2'de aktif edilecek
 
   const [gameSettings, setGameSettings] = useState<GameSettings>({
     difficulty: Difficulty.MEDIUM,
@@ -501,19 +491,12 @@ const AppContent: React.FC = () => {
           console.error('AdMob init failed:', e);
         }
         
-        // In-App Purchase store'u başlat
-        try {
-          await initializeStore();
-        } catch (e) {
-          console.error('Store init failed:', e);
-        }
-        
         // User properties güncelle
         try {
           setUserProperties({
             level: userProfile.level,
             totalGames: userProfile.stats?.totalGames || 0,
-            isPremium: isPremiumUser(),
+            isPremium: false,
           });
           
           // Coin bakiyesi ve user segment logla
@@ -563,7 +546,7 @@ const AppContent: React.FC = () => {
             daysSinceFirstPlay,
             totalCoinsEarned: userProfile.totalCoinsEarned || 0,
             totalGames: userProfile.stats?.totalGames || 0,
-            isPremium: isPremiumUser(),
+            isPremium: false,
           });
         } catch (e) {
           console.error('User segment update failed:', e);
@@ -606,6 +589,7 @@ const AppContent: React.FC = () => {
     
     return () => clearInterval(interval);
   }, []);
+
 
   // Reklam izleme fonksiyonu
   const handleWatchAd = async (rewardType: 'coins' | 'double' | 'powerup' | 'adfree30') => {
@@ -765,36 +749,12 @@ const AppContent: React.FC = () => {
     }
   }, [phase, userProfile]);
 
-  // Özel teklif kontrolü (3. gün ve 14. gün)
+  // İlk oyun tarihi kaydet (analitik ve segment için)
   useEffect(() => {
-    if (phase === GamePhase.LOBBY && !isPremiumUser()) {
+    if (phase === GamePhase.LOBBY) {
       const firstPlayDate = localStorage.getItem('batakFirstPlayDate');
-      const offerShown = localStorage.getItem('batakSpecialOfferShown');
-      
       if (!firstPlayDate) {
-        // İlk oyun tarihi kaydet
         localStorage.setItem('batakFirstPlayDate', new Date().toISOString());
-      } else {
-        const daysSinceFirstPlay = Math.floor(
-          (Date.now() - new Date(firstPlayDate).getTime()) / (1000 * 60 * 60 * 24)
-        );
-        
-        // IAP devre dışı olduğu için special offer'lar kapalı
-        // İleride aktif edilecek:
-        /*
-        // 3. gün teklifi
-        if (daysSinceFirstPlay >= 3 && daysSinceFirstPlay < 7 && offerShown !== 'day3') {
-          setSpecialOfferType('day3');
-          setShowSpecialOffer(true);
-          logSpecialOfferShown('day3');
-        }
-        // 14. gün teklifi
-        else if (daysSinceFirstPlay >= 14 && daysSinceFirstPlay < 21 && offerShown !== 'day14') {
-          setSpecialOfferType('day14');
-          setShowSpecialOffer(true);
-          logSpecialOfferShown('day14');
-        }
-        */
       }
     }
   }, [phase]);
@@ -1518,7 +1478,7 @@ const AppContent: React.FC = () => {
         }
         
         // XP ekle ve seviye kontrolü (Premium: 2x XP)
-        const finalXp = isPremiumUser() ? xpEarned * 2 : xpEarned;
+        const finalXp = xpEarned;
         const xpResult = addXp(updated, finalXp);
         updated = xpResult.newProfile;
         if (xpResult.leveledUp && xpResult.newLevel) {
@@ -1809,8 +1769,8 @@ const AppContent: React.FC = () => {
       </div>
         </div>
 
-      {/* Content - Scrollable - Tab bar (~50px) + Banner (~50px) için padding */}
-      <div className="flex-1 overflow-y-auto px-4 pb-28">
+      {/* Content - Scrollable - Tab bar (~50px) + Banner (50-90px) için padding */}
+      <div className="flex-1 overflow-y-auto px-4 pb-28 md:pb-36">
         <div className="w-full max-w-2xl mx-auto">
           {/* Logo */}
           <div className="text-center py-3">
@@ -1880,15 +1840,6 @@ const AppContent: React.FC = () => {
                 </div>
               )}
 
-              {/* Arkadaş Davet Et - Referral */}
-              <button 
-                onClick={() => setShowReferralModal(true)}
-                className="w-full bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/30 text-white font-bold py-3 rounded-xl hover:bg-blue-500/30 transition-all text-xs flex items-center justify-center gap-2 mb-4"
-              >
-                <span className="text-lg">👥</span>
-                ARKADAŞINI DAVET ET = {REFERRAL_REWARDS.DAILY_SHARE_BONUS} COİN
-                {canClaimDailyShareBonus() && <span className="ml-2 px-2 py-0.5 bg-green-500 text-white text-[8px] rounded-full">BONUS!</span>}
-              </button>
             </>
           )}
 
@@ -2036,10 +1987,11 @@ const AppContent: React.FC = () => {
       {/* Bottom Section - Tab Bar + Banner Ad */}
       <div className="flex-shrink-0 absolute bottom-0 left-0 right-0 flex flex-col">
         {/* Banner Ad Alanı - EN ALTTA (AdMob banner buraya render edilecek) */}
-        <div className="h-[50px] bg-black/40" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}></div>
+        {/* iPhone: 50px, iPad: 90px (728x90 leaderboard) */}
+        <div className="h-[50px] md:h-[90px] bg-black/40" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}></div>
         
         {/* Tab Bar - Banner'ın ÜSTÜNDE */}
-        <div className="absolute bottom-[50px] left-0 right-0 bg-black/90 backdrop-blur-xl border-t border-white/10 px-4 py-2" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div className="absolute bottom-[50px] md:bottom-[90px] left-0 right-0 bg-black/90 backdrop-blur-xl border-t border-white/10 px-4 py-2" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           <div className="flex justify-around max-w-lg mx-auto">
             <button 
               onClick={() => setLobbyTab('game')}
@@ -2458,27 +2410,6 @@ const AppContent: React.FC = () => {
                 </button>
               </div>
               
-              {/* Kazandıysa paylaş butonu */}
-              {(roundResults?.winnerId === 0 || (selectedMode === GameMode.ESLI && (roundResults?.winnerId === 0 || roundResults?.winnerId === 2))) && (
-                <button 
-                  onClick={async () => {
-                    const result = await shareVictory({
-                      mode: selectedMode,
-                      score: roundResults?.totalScores[0] || 0,
-                      username: userProfile.username,
-                      referralCode: getReferralCode(userProfile.username),
-                    });
-                    if (result.success) {
-                      logReferralShare('victory');
-                      setMessage('Başarın paylaşıldı! 🎉');
-                      setTimeout(() => setMessage(null), 2000);
-                    }
-                  }}
-                  className="mt-3 w-full bg-gradient-to-r from-blue-500/30 to-cyan-500/30 border border-blue-400/30 text-white font-bold py-3 rounded-2xl hover:bg-blue-500/40 transition-all text-sm flex items-center justify-center gap-2"
-                >
-                  <span>📤</span> Başarını Paylaş
-                </button>
-              )}
             </div>
           </div>
         )}
@@ -2717,57 +2648,42 @@ const AppContent: React.FC = () => {
                  </div>
 
                  {/* Reklamsız Seçenekleri */}
-                 {adFreeTimeLeft > 0 ? (
-                   <div className="bg-emerald-500/20 p-4 rounded-2xl border border-emerald-400/30 mb-4">
-                     <div className="flex items-center justify-between">
-                       <div className="flex items-center gap-2">
-                         <span className="text-xl">🛡️</span>
-                         <span className="text-white font-bold text-sm">REKLAMSIZ</span>
-                       </div>
-                       <span className="text-emerald-400 font-black">{formatRemainingTime(adFreeTimeLeft)}</span>
-                     </div>
-                   </div>
-                 ) : (
-                   <div className="space-y-2 mb-4">
-                     {canWatchRewardedAd() && (
-                       <button 
-                         onClick={() => {
-                           setShowSettings(false);
-                           handleWatchAd('adfree30');
-                         }}
-                         className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-                       >
-                         <span className="text-lg">🎬</span>
-                         REKLAM İZLE = 30 DK REKLAMSIZ
-                       </button>
-                     )}
-                     <button 
-                       onClick={() => {
-                         setShowSettings(false);
-                         setShowAdFreeShop(true);
-                       }}
-                       className="w-full bg-white/10 text-white font-bold py-3 rounded-2xl hover:bg-white/20 transition-all text-xs flex items-center justify-center gap-2"
-                     >
-                       <Coins size={14} className="text-yellow-400" />
-                       COİN İLE REKLAMSIZ
-                     </button>
-                   </div>
-                 )}
-                 
-                 {/* Premium Butonu - IAP aktif edilince açılacak */}
-                 {/* 
-                 <button 
-                   onClick={() => {
-                     setShowSettings(false);
-                     setShowPremiumModal(true);
-                     logPremiumModalOpened();
-                   }}
-                   className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-2 mb-4"
-                 >
-                   <span className="text-xl">👑</span>
-                   BATAK PRO+ OL
-                 </button>
-                 */}
+                {adFreeTimeLeft > 0 ? (
+                  <div className="bg-emerald-500/20 p-4 rounded-2xl border border-emerald-400/30 mb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">🛡️</span>
+                        <span className="text-white font-bold text-sm">REKLAMSIZ</span>
+                      </div>
+                      <span className="text-emerald-400 font-black">{formatRemainingTime(adFreeTimeLeft)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 mb-4">
+                    {canWatchRewardedAd() && (
+                      <button 
+                        onClick={() => {
+                          setShowSettings(false);
+                          handleWatchAd('adfree30');
+                        }}
+                        className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                      >
+                        <span className="text-lg">🎬</span>
+                        REKLAM İZLE = 30 DK REKLAMSIZ
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => {
+                        setShowSettings(false);
+                        setShowAdFreeShop(true);
+                      }}
+                      className="w-full bg-white/10 text-white font-bold py-3 rounded-2xl hover:bg-white/20 transition-all text-xs flex items-center justify-center gap-2"
+                    >
+                      <Coins size={14} className="text-yellow-400" />
+                      COİN İLE REKLAMSIZ
+                    </button>
+                  </div>
+                )}
 
                  <button onClick={() => setShowSettings(false)} className="w-full bg-white text-emerald-900 py-5 rounded-2xl font-black shadow-xl uppercase tracking-tighter active:scale-95 transition-all">KAYDET</button>
               </div>
@@ -3004,8 +2920,8 @@ const AppContent: React.FC = () => {
                </div>
              ))}
 
-             {/* Kullanıcı kartları - Banner ads için yukarı taşındı */}
-             <div className="absolute bottom-20 inset-x-0 flex flex-col items-center z-[50]">
+             {/* Kullanıcı kartları - Banner ads için yukarı taşındı (iPad: daha fazla boşluk) */}
+             <div className="absolute bottom-20 md:bottom-28 inset-x-0 flex flex-col items-center z-[50]">
                 <div className={`relative mb-4 flex flex-col items-center ${gameSettings.theme === 'kiraathane' ? 'scale-100' : ''}`}>
                    {gameSettings.theme === 'kiraathane' && (
                      <div className="absolute inset-x-[-30px] inset-y-[-8px] bg-gradient-to-b from-[#8b4513] to-[#451a03] rounded-[2rem] wood-border -z-10 shadow-2xl"></div>
@@ -3065,8 +2981,8 @@ const AppContent: React.FC = () => {
                 </div>
              </div>
              
-             {/* Banner Ad Alanı - Oyun ekranı */}
-             <div className="absolute bottom-0 left-0 right-0 h-[50px] bg-black/30 z-[40]" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}></div>
+             {/* Banner Ad Alanı - Oyun ekranı (iPhone: 50px, iPad: 90px) */}
+             <div className="absolute bottom-0 left-0 right-0 h-[50px] md:h-[90px] bg-black/30 z-[40]" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}></div>
 
              {message && (
                <div className="fixed inset-0 z-[1000] flex items-center justify-center pointer-events-none">
@@ -3849,364 +3765,6 @@ const AppContent: React.FC = () => {
           </div>
         )}
 
-        {/* Referral (Davet) Modal */}
-        {showReferralModal && (
-          <div className="fixed inset-0 z-[750] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
-            <div className="bg-gradient-to-br from-blue-900 to-cyan-900 w-full max-w-md rounded-[3rem] p-6 border border-blue-400/30 shadow-2xl relative overflow-hidden">
-              <button 
-                onClick={() => setShowReferralModal(false)}
-                className="absolute top-4 right-4 p-2 bg-white/10 rounded-xl text-white/60 z-10"
-              >
-                <X size={18} />
-              </button>
-              
-              <div className="relative z-10">
-                <div className="text-center mb-6">
-                  <div className="text-5xl mb-3">👥</div>
-                  <h2 className="text-2xl font-black text-white mb-1">Arkadaşını Davet Et</h2>
-                  <p className="text-white/60 text-sm">Paylaş, arkadaşın indir, ikimiz de kazanalım!</p>
-                </div>
-                
-                {/* Davet Kodu */}
-                <div className="bg-black/30 rounded-2xl p-4 mb-4 border border-white/10 text-center">
-                  <div className="text-white/60 text-xs mb-2">Senin Davet Kodun</div>
-                  <div className="text-3xl font-black text-yellow-400 tracking-widest">
-                    {getReferralCode(userProfile.username)}
-                  </div>
-                </div>
-                
-                {/* İstatistikler */}
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className="bg-white/5 rounded-xl p-3 text-center">
-                    <div className="text-2xl font-black text-white">{getReferralStats().totalInvites}</div>
-                    <div className="text-white/40 text-[10px]">Toplam Paylaşım</div>
-                  </div>
-                  <div className="bg-white/5 rounded-xl p-3 text-center">
-                    <div className="text-2xl font-black text-yellow-400">{getReferralStats().coinsEarned}</div>
-                    <div className="text-white/40 text-[10px]">Kazanılan Coin</div>
-                  </div>
-                </div>
-                
-                {/* Ödül Bilgisi */}
-                <div className="bg-yellow-500/10 rounded-xl p-3 mb-4 border border-yellow-400/30">
-                  <div className="text-yellow-400 text-xs font-bold text-center mb-2">🎁 Ödüller</div>
-                  <div className="text-white/80 text-[11px] text-center space-y-1">
-                    <div>• İlk paylaşımda günlük <span className="text-yellow-400 font-bold">{REFERRAL_REWARDS.DAILY_SHARE_BONUS} coin</span></div>
-                    <div>• Arkadaşın katılırsa <span className="text-yellow-400 font-bold">{REFERRAL_REWARDS.INVITER_BONUS} coin</span></div>
-                  </div>
-                </div>
-                
-                {/* Paylaş Butonu */}
-                <button
-                  onClick={async () => {
-                    const result = await shareInvite(
-                      getReferralCode(userProfile.username),
-                      userProfile.username
-                    );
-                    if (result.success) {
-                      logReferralShare('invite');
-                      
-                      // Günlük share bonus
-                      if (canClaimDailyShareBonus()) {
-                        const bonus = claimDailyShareBonus();
-                        if (bonus > 0) {
-                          setUserProfile(prev => ({
-                            ...prev,
-                            coins: prev.coins + bonus,
-                            totalCoinsEarned: prev.totalCoinsEarned + bonus,
-                          }));
-                          setMessage(`+${bonus} davet bonusu! 👥`);
-                          logCoinEarned({ amount: bonus, source: 'achievement' });
-                          setTimeout(() => setMessage(null), 3000);
-                        }
-                      }
-                    }
-                  }}
-                  className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-black py-4 rounded-2xl shadow-lg hover:scale-105 transition-all flex items-center justify-center gap-2"
-                >
-                  <span className="text-xl">📤</span>
-                  PAYLAŞ
-                </button>
-                
-                <div className="mt-4 text-center text-white/30 text-[10px]">
-                  WhatsApp, Instagram, Telegram ve daha fazlasında paylaş!
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Özel Teklif Modal */}
-        {showSpecialOffer && specialOfferType && (
-          <div className="fixed inset-0 z-[750] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
-            <div className="bg-gradient-to-br from-purple-900 to-pink-900 w-full max-w-md rounded-[3rem] p-8 border border-purple-400/30 shadow-2xl relative overflow-hidden">
-              {/* Parıltı efekti */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer"></div>
-              
-              <div className="relative z-10">
-                <div className="text-center mb-6">
-                  <div className="text-5xl mb-3">🎉</div>
-                  <h2 className="text-2xl font-black text-white mb-1">
-                    {specialOfferType === 'day3' ? 'Hoş Geldin Teklifi!' : 'Sadık Oyuncu Ödülü!'}
-                  </h2>
-                  <p className="text-white/60 text-sm">
-                    {specialOfferType === 'day3' 
-                      ? 'Seninle 3 gündür birlikteyiz! Özel indirim kazandın.' 
-                      : '14 gündür bizimlesin! Teşekkür indirimi kazandın.'}
-                  </p>
-                </div>
-                
-                <div className="bg-black/30 rounded-2xl p-6 mb-6 border border-white/10">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <div className="text-white font-black text-lg">Aylık Premium</div>
-                      <div className="text-white/40 text-xs line-through">₺49.99</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-3xl font-black text-yellow-400">
-                        {specialOfferType === 'day3' ? '₺24.99' : '₺29.99'}
-                      </div>
-                      <div className="text-emerald-400 text-xs font-bold">
-                        {specialOfferType === 'day3' ? '%50 İNDİRİM!' : '%40 İNDİRİM!'}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="text-white/60 text-xs mb-4">
-                    ✓ Tüm reklamlar kaldırılır<br/>
-                    ✓ 2x XP kazanma<br/>
-                    ✓ Günlük 500 coin<br/>
-                    ✓ Günlük 5 undo hakkı
-                  </div>
-                  
-                  <div className="text-center text-rose-400 text-xs font-bold animate-pulse">
-                    ⏰ Bu teklif 24 saat geçerli!
-                  </div>
-                </div>
-                
-                <button
-                  onClick={async () => {
-                    // Not: Gerçek indirimli fiyat App Store Connect'te ayarlanmalı
-                    const success = await purchaseSubscription('monthly');
-                    if (success) {
-                      localStorage.setItem('batakSpecialOfferShown', specialOfferType);
-                      setShowSpecialOffer(false);
-                      logSpecialOfferResponse({ offerType: specialOfferType!, accepted: true });
-                      logSubscriptionPurchased({ 
-                        tier: 'monthly', 
-                        price: specialOfferType === 'day3' ? 24.99 : 29.99, 
-                        currency: 'TRY',
-                        isSpecialOffer: true 
-                      });
-                    }
-                  }}
-                  className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-black font-black py-4 rounded-2xl mb-3 shadow-lg hover:scale-105 transition-all"
-                >
-                  TEKLİFİ AL!
-                </button>
-                
-                <button
-                  onClick={() => {
-                    localStorage.setItem('batakSpecialOfferShown', specialOfferType);
-                    setShowSpecialOffer(false);
-                    logSpecialOfferResponse({ offerType: specialOfferType!, accepted: false });
-                  }}
-                  className="w-full text-white/40 text-xs py-2"
-                >
-                  Hayır, teşekkürler
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Premium Subscription Modal */}
-        {showPremiumModal && (
-          <div className="fixed inset-0 z-[700] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
-            <div className={`${themeStyles.bg} w-full max-w-md rounded-[3rem] p-8 border border-white/10 shadow-2xl relative overflow-hidden`}>
-              {/* Arka plan efekti */}
-              <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 via-amber-500/5 to-transparent pointer-events-none"></div>
-              
-              <div className="relative z-10">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-black text-white italic flex items-center gap-2">
-                    <span className="text-3xl">👑</span> BATAK PRO+
-                  </h2>
-                  <button onClick={() => setShowPremiumModal(false)} className="bg-white/5 p-2 rounded-xl text-white/40"><X size={20}/></button>
-                </div>
-                
-                {/* Premium kullanıcı ise */}
-                {isPremiumUser() ? (
-                  <div className="text-center py-8">
-                    <div className="text-6xl mb-4">👑</div>
-                    <h3 className="text-2xl font-black text-yellow-400 mb-2">Premium Üyesin!</h3>
-                    <p className="text-white/60 text-sm mb-6">Tüm premium özelliklerin aktif.</p>
-                    
-                    <div className="bg-yellow-500/10 p-4 rounded-2xl border border-yellow-400/30 mb-4">
-                      <div className="text-white/60 text-xs mb-2">Kalan Geri Al Hakkı</div>
-                      <div className="text-3xl font-black text-yellow-400">{getPremiumDailyUndos()}/5</div>
-                    </div>
-                    
-                    {canClaimPremiumDailyCoins() && (
-                      <button 
-                        onClick={() => {
-                          const coins = claimPremiumDailyCoins();
-                          if (coins > 0) {
-                            setUserProfile(prev => ({ ...prev, coins: prev.coins + coins }));
-                            setMessage(`+${coins} bonus coin alındı! 🪙`);
-                            logCoinEarned({ amount: coins, source: 'premium_daily' });
-                            setTimeout(() => setMessage(null), 3000);
-                          }
-                        }}
-                        className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-black py-3 rounded-2xl mb-4"
-                      >
-                        🪙 Günlük 500 Coin Al
-                      </button>
-                    )}
-                    
-                    <button onClick={() => setShowPremiumModal(false)} className="text-white/40 text-sm">
-                      Kapat
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    {/* Premium Özellikleri */}
-                    <div className="bg-yellow-500/10 p-6 rounded-2xl border border-yellow-400/30 mb-6">
-                      <h3 className="text-white font-black text-sm mb-4">PREMİUM ÖZELLİKLER</h3>
-                      <div className="space-y-3">
-                        {[
-                          { icon: '🚫', text: 'Tüm reklamlar kaldırılır' },
-                          { icon: '⚡', text: '2x XP Kazanma' },
-                          { icon: '🪙', text: 'Günlük 500 bonus coin' },
-                          { icon: '↩️', text: 'Günlük 5 Geri Al (Undo) hakkı' },
-                          { icon: '🎨', text: '5 özel premium tema' },
-                          { icon: '👤', text: 'Özel "PRO" rozeti' },
-                        ].map((feature, idx) => (
-                          <div key={idx} className="flex items-center gap-3">
-                            <span className="text-xl">{feature.icon}</span>
-                            <span className="text-white text-sm">{feature.text}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {/* Fiyatlandırma */}
-                    <div className="space-y-3">
-                      {/* Aylık - En Popüler */}
-                      <button 
-                        onClick={async () => {
-                          setMessage('Satın alma başlatılıyor...');
-                          const success = await purchaseSubscription('monthly');
-                          if (success) {
-                            setMessage('Satın alma işlemi başlatıldı!');
-                            logSubscriptionPurchased({ 
-                              tier: 'monthly', 
-                              price: SUBSCRIPTION_PRICES.monthly.amount, 
-                              currency: 'TRY',
-                              isSpecialOffer: false 
-                            });
-                          } else {
-                            setMessage('Satın alma başlatılamadı. Lütfen tekrar deneyin.');
-                          }
-                          setTimeout(() => setMessage(null), 3000);
-                        }}
-                        className="w-full p-4 rounded-2xl border-2 border-yellow-400 bg-yellow-500/20 relative text-left hover:bg-yellow-500/30 transition-all"
-                      >
-                        <div className="absolute -top-2 -right-2 bg-yellow-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full">
-                          EN POPÜLER
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-white font-black">Aylık</div>
-                            <div className="text-white/60 text-xs">Her ay yenilenir</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-black text-yellow-400">₺{SUBSCRIPTION_PRICES.monthly.amount}</div>
-                            <div className="text-white/40 text-xs">/ay</div>
-                          </div>
-                        </div>
-                      </button>
-                      
-                      {/* Haftalık */}
-                      <button 
-                        onClick={async () => {
-                          setMessage('Satın alma başlatılıyor...');
-                          const success = await purchaseSubscription('weekly');
-                          if (success) {
-                            setMessage('Satın alma işlemi başlatıldı!');
-                            logSubscriptionPurchased({ 
-                              tier: 'weekly', 
-                              price: SUBSCRIPTION_PRICES.weekly.amount, 
-                              currency: 'TRY',
-                              isSpecialOffer: false 
-                            });
-                          } else {
-                            setMessage('Satın alma başlatılamadı. Lütfen tekrar deneyin.');
-                          }
-                          setTimeout(() => setMessage(null), 3000);
-                        }}
-                        className="w-full p-4 rounded-2xl border border-white/10 bg-white/5 text-left hover:bg-white/10 transition-all"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-white font-black">Haftalık</div>
-                            <div className="text-white/60 text-xs">Her hafta yenilenir</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-black text-white">₺{SUBSCRIPTION_PRICES.weekly.amount}</div>
-                            <div className="text-white/40 text-xs">/hafta</div>
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-                    
-                    <div className="mt-6 text-center text-white/40 text-[10px]">
-                      Abonelikler App Store / Google Play üzerinden yönetilir.
-                      <br />İstediğin zaman iptal edebilirsin.
-                    </div>
-                    
-                    {/* EULA ve Gizlilik Politikası Linkleri - ZORUNLU */}
-                    <div className="mt-4 flex justify-center gap-4 text-[10px]">
-                      <a 
-                        href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-400 underline"
-                      >
-                        Kullanım Koşulları
-                      </a>
-                      <a 
-                        href="https://docs.google.com/document/d/1b0q3_YHQmv9jRhS2yU8aI3Yp8ZfZVYBGWu4T5g1Pq_A/edit?tab=t.0" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-400 underline"
-                      >
-                        Gizlilik Politikası
-                      </a>
-                    </div>
-                    
-                    {/* Satın alımları geri yükle */}
-                    <button 
-                      onClick={async () => {
-                        setMessage('Satın alımlar geri yükleniyor...');
-                        const success = await restorePurchases();
-                        if (success) {
-                          setMessage('Satın alımlar başarıyla yüklendi!');
-                        } else {
-                          setMessage('Satın alım bulunamadı.');
-                        }
-                        setTimeout(() => setMessage(null), 3000);
-                      }}
-                      className="w-full text-center text-white/40 text-xs mt-4 hover:text-white/60"
-                    >
-                      Satın alımları geri yükle
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* CONFETTI */}
         {showConfetti && <Confetti />}

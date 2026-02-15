@@ -9,6 +9,7 @@ import {
   BannerAdPosition,
   AdMobBannerSize
 } from '@capacitor-community/admob';
+import { Capacitor } from '@capacitor/core';
 
 // TrackingAuthorizationStatus - iOS ATT için
 enum TrackingAuthorizationStatus {
@@ -23,7 +24,7 @@ enum TrackingAuthorizationStatus {
 // GELIŞTIRME MODU - Test reklamları için true yap
 // ÖNEMLİ: Production'a çıkarken false yapılmalı!
 // ============================================
-const IS_DEVELOPMENT = true; // TODO: Production'da false yap
+const IS_DEVELOPMENT = false; // Production mode
 
 // AD UNIT ID'LERİ - PRODUCTION
 // ============================================
@@ -42,13 +43,23 @@ const AD_CONFIG = {
   },
 };
 
-// Platform belirleme
+// Platform belirleme - Capacitor native API kullan (iPad dahil doğru algılar)
 const getPlatform = (): 'ios' | 'android' => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  if (userAgent.includes('iphone') || userAgent.includes('ipad')) {
-    return 'ios';
-  }
+  if (Capacitor.getPlatform() === 'ios') return 'ios';
   return 'android';
+};
+
+// iPad kontrolü (banner yüksekliği için)
+export const isIPad = (): boolean => {
+  if (Capacitor.getPlatform() !== 'ios') return false;
+  // iPad: geniş ekran (768px+) veya user agent kontrolü
+  const minDimension = Math.min(window.innerWidth, window.innerHeight);
+  return minDimension >= 768;
+};
+
+// Banner reklam yüksekliği (iPhone: ~50px, iPad: ~90px)
+export const getBannerHeight = (): number => {
+  return isIPad() ? 90 : 50;
 };
 
 // ============================================
@@ -61,31 +72,15 @@ interface AdFreeStatus {
 }
 
 export const getAdFreeStatus = (): AdFreeStatus => {
-  // 1. Subscription kontrolü (App Store / Google Play satın alımları)
-  const subscriptionData = localStorage.getItem('batakSubscription');
-  if (subscriptionData) {
-    const subscription = JSON.parse(subscriptionData);
-    if (subscription.isSubscribed && (!subscription.expiresAt || subscription.expiresAt > Date.now())) {
-      return { isAdFree: true, expiresAt: subscription.expiresAt, isPremium: true };
-    }
-  }
-  
-  // 2. Premium kontrolü (eski sistem)
-  const premiumData = localStorage.getItem('batakPremium');
-  if (premiumData) {
-    const premium = JSON.parse(premiumData);
-    if (premium.active && (!premium.expiresAt || premium.expiresAt > Date.now())) {
-      return { isAdFree: true, expiresAt: premium.expiresAt, isPremium: true };
-    }
-  }
-  
-  // 3. Geçici reklamsız süre kontrolü (coin ile satın alınan)
+  // Geçici reklamsız süre kontrolü (coin ile satın alınan veya reklam izleyerek)
   const adFreeData = localStorage.getItem('batakAdFree');
   if (adFreeData) {
-    const adFree = JSON.parse(adFreeData);
-    if (adFree.expiresAt > Date.now()) {
-      return { isAdFree: true, expiresAt: adFree.expiresAt, isPremium: false };
-    }
+    try {
+      const adFree = JSON.parse(adFreeData);
+      if (adFree.expiresAt > Date.now()) {
+        return { isAdFree: true, expiresAt: adFree.expiresAt, isPremium: false };
+      }
+    } catch { /* ignore */ }
   }
   
   return { isAdFree: false, expiresAt: null, isPremium: false };
@@ -502,69 +497,5 @@ export const claimFirstGameBonus = (): boolean => {
   return true;
 };
 
-// ============================================
-// PREMIUM SUBSCRIPTION
-// ============================================
-export interface PremiumStatus {
-  active: boolean;
-  expiresAt: number | null;
-  tier: 'weekly' | 'monthly' | 'yearly' | 'lifetime' | null;
-}
-
-export const getPremiumStatus = (): PremiumStatus => {
-  const stored = localStorage.getItem('batakPremium');
-  if (!stored) {
-    return { active: false, expiresAt: null, tier: null };
-  }
-  
-  const data = JSON.parse(stored);
-  
-  // Süre dolmuş mu?
-  if (data.expiresAt && data.expiresAt < Date.now()) {
-    return { active: false, expiresAt: null, tier: null };
-  }
-  
-  return data;
-};
-
-export const setPremiumStatus = (tier: PremiumStatus['tier'], durationDays: number | null): void => {
-  const expiresAt = durationDays ? Date.now() + (durationDays * 24 * 60 * 60 * 1000) : null;
-  localStorage.setItem('batakPremium', JSON.stringify({
-    active: true,
-    expiresAt,
-    tier,
-  }));
-};
-
-// Premium günlük Undo hakkı
-export const getPremiumDailyUndos = (): number => {
-  const premium = getPremiumStatus();
-  if (!premium.active) return 0;
-  
-  const today = new Date().toDateString();
-  const stored = localStorage.getItem('batakPremiumUndos');
-  
-  if (stored) {
-    const data = JSON.parse(stored);
-    if (data.date === today) {
-      return data.remaining;
-    }
-  }
-  
-  // Yeni gün, 3 undo ver
-  const newData = { date: today, remaining: 3 };
-  localStorage.setItem('batakPremiumUndos', JSON.stringify(newData));
-  return 3;
-};
-
-export const usePremiumUndo = (): boolean => {
-  const remaining = getPremiumDailyUndos();
-  if (remaining <= 0) return false;
-  
-  const today = new Date().toDateString();
-  localStorage.setItem('batakPremiumUndos', JSON.stringify({
-    date: today,
-    remaining: remaining - 1,
-  }));
-  return true;
-};
+// Premium subscription bölümü kaldırıldı
+// IAP sistemi artık subscriptionSystem.ts'de yönetiliyor
