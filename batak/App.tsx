@@ -39,9 +39,7 @@ import {
   isFirstGameOfDay, claimFirstGameBonus, markDayPlayed,
   getBannerHeight
 } from './utils/adMobSystem';
-import {
-  initializeStore, isPremiumUser
-} from './utils/subscriptionSystem';
+// subscriptionSystem - IAP v2'de aktif edilecek
 import {
   initializeAnalytics, logGameStart, logGameEnd, logGameModePlay,
   logRewardedAdWatched, logInterstitialShown, logDailyRewardClaimed,
@@ -624,10 +622,10 @@ const AppContent: React.FC = () => {
       });
       
       if (rewardType === 'adfree30') {
-        // 30 dakika reklamsız
-        setAdFreeTime(30);
+        // 15 dakika reklamsız
+        setAdFreeTime(15);
         hideBannerAd();
-        setMessage('30 dakika reklamsız!');
+        setMessage('15 dakika reklamsız!');
         setTimeout(() => setMessage(null), 2000);
       } else {
         setUserProfile(prev => {
@@ -669,7 +667,7 @@ const AppContent: React.FC = () => {
     if (claimFirstGameBonus()) {
       setFirstGameBonusClaimed(true);
       hideBannerAd();
-      setMessage('🎁 15 dakika reklamsız!');
+      setMessage('🎁 10 dakika reklamsız!');
       setTimeout(() => setMessage(null), 3000);
     }
   };
@@ -1477,7 +1475,7 @@ const AppContent: React.FC = () => {
           updated.totalCoinsSpent += Math.abs(coinsEarned);
         }
         
-        // XP ekle ve seviye kontrolü (Premium: 2x XP)
+        // XP ekle ve seviye kontrolü
         const finalXp = xpEarned;
         const xpResult = addXp(updated, finalXp);
         updated = xpResult.newProfile;
@@ -1828,7 +1826,7 @@ const AppContent: React.FC = () => {
                   className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black py-3 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 mb-4 animate-pulse"
                 >
                   <span className="text-lg">🎁</span>
-                  GÜNÜN İLK OYUNU = 15 DK REKLAMSIZ
+                  GÜNÜN İLK OYUNU = 10 DK REKLAMSIZ
                 </button>
               )}
 
@@ -1949,7 +1947,7 @@ const AppContent: React.FC = () => {
                   disabled={adRewardPending !== null}
                   className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 transition-all uppercase tracking-wide text-xs flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  🎬 REKLAM İZLE = 30 DK REKLAMSIZ
+                  🎬 REKLAM İZLE = 15 DK REKLAMSIZ
         </button>
               )}
               {/* Coin için reklam izleme - reklamsız sürede de aktif */}
@@ -2669,7 +2667,7 @@ const AppContent: React.FC = () => {
                         className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
                       >
                         <span className="text-lg">🎬</span>
-                        REKLAM İZLE = 30 DK REKLAMSIZ
+                        REKLAM İZLE = 15 DK REKLAMSIZ
                       </button>
                     )}
                     <button 
@@ -3759,7 +3757,7 @@ const AppContent: React.FC = () => {
               </div>
               
               <div className="mt-6 text-center text-white/40 text-xs">
-                Veya <button onClick={() => { setShowAdFreeShop(false); handleWatchAd('adfree30'); }} className="text-orange-400 underline">reklam izleyerek</button> 30 dk bedava kazan!
+                Veya <button onClick={() => { setShowAdFreeShop(false); handleWatchAd('adfree30'); }} className="text-orange-400 underline">reklam izleyerek</button> 15 dk bedava kazan!
               </div>
             </div>
           </div>

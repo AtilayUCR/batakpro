@@ -493,7 +493,7 @@ export const claimFirstGameBonus = (): boolean => {
   if (!isFirstGameOfDay()) return false;
   
   markDayPlayed();
-  setAdFreeTime(15); // 15 dk reklamsız
+  setAdFreeTime(10); // 10 dk reklamsız
   return true;
 };
 
