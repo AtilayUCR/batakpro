@@ -11,13 +11,8 @@ import {
 } from '@capacitor-community/admob';
 import { Capacitor } from '@capacitor/core';
 
-// TrackingAuthorizationStatus - iOS ATT için
-enum TrackingAuthorizationStatus {
-  notDetermined = 0,
-  restricted = 1,
-  denied = 2,
-  authorized = 3,
-}
+// TrackingAuthorizationStatus - iOS ATT için (plugin string değer döndürüyor)
+type TrackingStatus = 'authorized' | 'denied' | 'notDetermined' | 'restricted';
 
 // ============================================
 // ============================================
@@ -133,28 +128,29 @@ export const purchaseAdFreeWithCoins = (
 export const requestTrackingAuthorization = async (): Promise<boolean> => {
   const platform = getPlatform();
   
-  // Sadece iOS'ta gerekli
   if (platform !== 'ios') {
     return true;
   }
   
   try {
-    const status = await AdMob.trackingAuthorizationStatus();
+    const currentStatus = await AdMob.trackingAuthorizationStatus();
+    const status = (currentStatus as { status: TrackingStatus }).status;
+    console.log('Current tracking status:', status);
     
-    // Zaten izin verilmiş
-    if (status.status === TrackingAuthorizationStatus.authorized) {
-      console.log('Tracking already authorized');
+    if (status === 'authorized') {
       return true;
     }
     
-    // Henüz sorulmamış - izin iste
-    if (status.status === TrackingAuthorizationStatus.notDetermined) {
-      const result = await AdMob.requestTrackingAuthorization();
-      console.log('Tracking authorization result:', result.status);
-      return result.status === TrackingAuthorizationStatus.authorized;
+    if (status === 'notDetermined') {
+      await AdMob.requestTrackingAuthorization();
+      
+      // İzin dialogu kapandıktan sonra güncel durumu tekrar kontrol et
+      const updatedStatus = await AdMob.trackingAuthorizationStatus();
+      const newStatus = (updatedStatus as { status: TrackingStatus }).status;
+      console.log('Tracking authorization result:', newStatus);
+      return newStatus === 'authorized';
     }
     
-    // Reddedilmiş veya kısıtlı - yine de reklam göster (non-personalized)
     console.log('Tracking not authorized, will show non-personalized ads');
     return false;
   } catch (error) {
