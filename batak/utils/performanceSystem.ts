@@ -54,8 +54,8 @@ class SoundCache {
     let audio = pool.find(a => a.paused || a.ended);
     
     if (!audio) {
-      // Hepsi çalıyorsa, birini klonla
       audio = pool[0].cloneNode(true) as HTMLAudioElement;
+      if (pool.length < 8) pool.push(audio);
     }
     
     audio.currentTime = 0;
@@ -157,7 +157,9 @@ let animationFrameId: number | null = null;
 const animationCallbacks: Map<string, () => void> = new Map();
 
 const runAnimationLoop = () => {
-  animationCallbacks.forEach(callback => callback());
+  for (const [id, callback] of animationCallbacks) {
+    try { callback(); } catch (e) { console.error(`Animation callback '${id}' error:`, e); }
+  }
   
   if (animationCallbacks.size > 0) {
     animationFrameId = requestAnimationFrame(runAnimationLoop);

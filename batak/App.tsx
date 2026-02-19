@@ -353,7 +353,8 @@ const AppContent: React.FC = () => {
         maxBidRecord: 0, 
         totalTricks: 0, 
         batakRate: 0, 
-        avgBid: 0, 
+        avgBid: 0,
+        totalBidSum: 0,
         highestTricksInOneRound: 0 
       },
       ownedTables: ['default'],
@@ -391,52 +392,7 @@ const AppContent: React.FC = () => {
   const [gameEndMessage, setGameEndMessage] = useState<{ type: 'win' | 'lose' | 'batak'; coins: number } | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
 
-  const updateUserStats = (results: { scores: number[], batakPlayers: number[], winnerId?: number }, currentPlayers: Player[]) => {
-    setUserProfile(prev => {
-      const newStats = { ...prev.stats };
-      newStats.totalGames += 1;
-      
-      const userPlayer = currentPlayers[0];
-      if (!userPlayer) return prev;
-      
-      const isUserBatak = results.batakPlayers.includes(0);
-      const isUserWinner = results.winnerId === 0 || (selectedMode === GameMode.ESLI && (results.winnerId === 0 || results.winnerId === 2));
-      
-      if (isUserWinner) {
-        newStats.totalWins += 1;
-      }
-      
-      if (userPlayer.currentBid > 0) {
-        if (isUserBatak) {
-          newStats.totalBidsLost += 1;
-        } else {
-          newStats.totalBidsWon += 1;
-        }
-        
-        if (userPlayer.currentBid > newStats.maxBidRecord) {
-          newStats.maxBidRecord = userPlayer.currentBid;
-        }
-        
-        if (userPlayer.tricksWon > newStats.highestTricksInOneRound) {
-          newStats.highestTricksInOneRound = userPlayer.tricksWon;
-        }
-      }
-      
-      newStats.totalTricks += userPlayer.tricksWon;
-      
-      const totalBids = newStats.totalBidsWon + newStats.totalBidsLost;
-      if (totalBids > 0) {
-        newStats.batakRate = Math.round((newStats.totalBidsLost / totalBids) * 100);
-        // Ortalama ihale hesaplama (basitleştirilmiş)
-        const avgBidSum = (newStats.totalBidsWon + newStats.totalBidsLost) * 7;
-        newStats.avgBid = Math.round((avgBidSum / totalBids) * 10) / 10;
-      }
-      
-      const updated = { ...prev, stats: newStats };
-      localStorage.setItem('batakProfile', JSON.stringify(updated));
-      return updated;
-    });
-  };
+  // updateUserStats kaldırıldı - endRound içindeki setUserProfile blogu tüm stats'ı zaten güncelliyor (çift sayım fix)
 
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
 
@@ -692,7 +648,7 @@ const AppContent: React.FC = () => {
       if (shown) {
         markInterstitialShown();
         incrementInterstitialAdCount();
-        logInterstitialShown(incrementGameCount.length || 0);
+        logInterstitialShown(userProfile.stats?.totalGames || 0);
       }
     }
   };
@@ -1019,9 +975,9 @@ const AppContent: React.FC = () => {
     setPlayedModes(prev => new Set([...prev, selectedMode]));
 
     // Mod bazlı başlangıç ayarları
-    const biddingModes = [GameMode.IHALELI, GameMode.ESLI, GameMode.TEKLI, GameMode.UCLU, GameMode.KUMANDA];
+    const biddingModes = [GameMode.IHALELI, GameMode.ESLI, GameMode.TEKLI, GameMode.UCLU, GameMode.KUMANDA, GameMode.ACIK_KOZ];
     const noTrumpModes = [GameMode.IHALESIZ, GameMode.YERE_BATAK];
-    const spadeTrumpModes = [GameMode.KOZ_MACA, GameMode.HIZLI, GameMode.ACIK_KOZ];
+    const spadeTrumpModes = [GameMode.KOZ_MACA, GameMode.HIZLI];
     
     if (biddingModes.includes(selectedMode)) {
       setIsBidding(true);
@@ -1108,11 +1064,16 @@ const AppContent: React.FC = () => {
       const activeBidders = players.filter(p => p.currentBid > 0);
       
       // İhale bitiş koşulları:
-      // 1. Sadece 1 kişi aktif ihale vermiş ve diğer herkes pas geçmiş
+      // 1. En az 1 aktif teklif veren var ve geri kalan herkes pas geçmiş
       // 2. VEYA herkes pas geçmiş
+      const allOthersPassedOrOutbid = passCount === playerCount - activeBidders.length;
+      const onlyOneCanWin = activeBidders.length === 1 && allOthersPassedOrOutbid;
+      const multipleActiveButAllPassed = activeBidders.length >= 2 && allOthersPassedOrOutbid &&
+        activeBidders.filter(p => p.currentBid === highestBid).length === 1;
       const shouldEndBidding = 
-        (activeBidders.length === 1 && passCount === playerCount - 1) || // 1 kazanan, kalanlar pas
-        (passCount === playerCount); // Herkes pas
+        onlyOneCanWin ||
+        multipleActiveButAllPassed ||
+        (passCount === playerCount);
       
       if (shouldEndBidding) {
         // İhale bitiyor - ref'i işaretle (race condition önlemek için)
@@ -1337,7 +1298,7 @@ const AppContent: React.FC = () => {
 
   // Bot kart oynama mantığı
   useEffect(() => {
-    if (phase === GamePhase.PLAYING && !isBidding && !showTrumpSelection && players[currentPlayerIdx]?.isBot && currentTrick.length < 4) {
+    if (phase === GamePhase.PLAYING && !isBidding && !showTrumpSelection && players[currentPlayerIdx]?.isBot && currentTrick.length < players.length) {
       const delay = getSpeedDelay();
       const t = setTimeout(() => {
         const bot = players[currentPlayerIdx];
@@ -1369,9 +1330,7 @@ const AppContent: React.FC = () => {
     setIsBidding(false);
     biddingEndingRef.current = false; // İhale bitiş flag'ini sıfırla
     setPhase(GamePhase.PLAYING);
-    if (bidWinnerId !== null) {
-      setCurrentPlayerIdx(bidWinnerId);
-    }
+    setCurrentPlayerIdx(bidWinnerId !== null ? bidWinnerId : currentPlayerIdx);
     
     // Analytics: Koz seçimi ve oyun başlangıcı
     logTrumpSelected(suit, selectedMode);
@@ -1385,7 +1344,7 @@ const AppContent: React.FC = () => {
   const endRound = () => {
     setPlayers(currentPlayers => {
       const totalTricks = selectedMode === GameMode.HIZLI ? 6 : 13;
-      const results = calculateRoundScore(currentPlayers, selectedMode, gameSettings.houseRules, totalTricks);
+      const results = calculateRoundScore(currentPlayers, selectedMode, gameSettings.houseRules, totalTricks, lastTrickWinnerId);
       setRoundResults(results);
       
       const userPlayer = currentPlayers[0];
@@ -1504,9 +1463,13 @@ const AppContent: React.FC = () => {
           updated.stats.highestTricksInOneRound = userPlayer.tricksWon;
         }
         
+        if (userPlayer.currentBid > 0) {
+          updated.stats.totalBidSum = (updated.stats.totalBidSum || 0) + userPlayer.currentBid;
+        }
         const totalBids = updated.stats.totalBidsWon + updated.stats.totalBidsLost;
         if (totalBids > 0) {
           updated.stats.batakRate = Math.round((updated.stats.totalBidsLost / totalBids) * 100);
+          updated.stats.avgBid = Math.round(((updated.stats.totalBidSum || 0) / totalBids) * 10) / 10;
         }
         
         // Görevleri güncelle
@@ -1650,9 +1613,6 @@ const AppContent: React.FC = () => {
         return updated;
       });
       
-      // İstatistikleri güncelle (eski fonksiyon)
-      updateUserStats(results, currentPlayers);
-      
       // Skorları güncelle
       const updated = currentPlayers.map((p, idx) => ({
         ...p,
@@ -1694,7 +1654,7 @@ const AppContent: React.FC = () => {
         const winnerId = determineTrickWinner(currentTrick, trumpSuit);
         setPlayers(prev => prev.map(p => p.id === winnerId ? { ...p, tricksWon: p.tricksWon + 1 } : p));
         
-        if (players[winnerId].isBot && Math.random() > 0.5) {
+        if (players[winnerId]?.isBot && Math.random() > 0.5) {
           triggerBotMessage(winnerId, 'win');
         }
 
@@ -1731,7 +1691,7 @@ const AppContent: React.FC = () => {
             const newCount = prev + 1;
             const maxTricks = selectedMode === GameMode.HIZLI ? 6 : 13;
             if (newCount === maxTricks) {
-              // El tamamlandı, oyun bitti
+              setLastTrickWinnerId(winnerId);
               setTimeout(() => endRound(), getSpeedDelay() + 500);
             }
             return newCount;
@@ -3461,11 +3421,15 @@ const AppContent: React.FC = () => {
                   <div className="text-yellow-400 font-black text-2xl">+{speedMatch.reward} 🪙</div>
                   <button
                     onClick={() => {
-                      setUserProfile(prev => ({
-                        ...prev,
-                        coins: prev.coins + speedMatch.reward,
-                        totalCoinsEarned: prev.totalCoinsEarned + speedMatch.reward,
-                      }));
+                      setUserProfile(prev => {
+                        const updated = {
+                          ...prev,
+                          coins: prev.coins + speedMatch.reward,
+                          totalCoinsEarned: prev.totalCoinsEarned + speedMatch.reward,
+                        };
+                        localStorage.setItem('batakProfile', JSON.stringify(updated));
+                        return updated;
+                      });
                       setShowSpeedMatch(false);
                     }}
                     className="mt-3 bg-emerald-500 text-white font-black py-2 px-6 rounded-xl"
@@ -3529,11 +3493,15 @@ const AppContent: React.FC = () => {
                           const result = checkTrumpGuess(trumpGuess, suit);
                           setTrumpGuess(result);
                           if (result.correct && result.reward > 0) {
-                            setUserProfile(prev => ({
-                              ...prev,
-                              coins: prev.coins + result.reward,
-                              totalCoinsEarned: prev.totalCoinsEarned + result.reward,
-                            }));
+                            setUserProfile(prev => {
+                              const updated = {
+                                ...prev,
+                                coins: prev.coins + result.reward,
+                                totalCoinsEarned: prev.totalCoinsEarned + result.reward,
+                              };
+                              localStorage.setItem('batakProfile', JSON.stringify(updated));
+                              return updated;
+                            });
                           }
                         }}
                         className={`${color} text-white font-black py-4 rounded-2xl flex flex-col items-center gap-1 hover:scale-105 transition-all`}

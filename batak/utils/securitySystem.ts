@@ -22,7 +22,7 @@ const base64Encode = (str: string): string => {
       String.fromCharCode(parseInt(p1, 16))
     ));
   } catch {
-    return btoa(str);
+    return '';
   }
 };
 
@@ -264,6 +264,5 @@ export const generateGameStateHash = (phase: string, playerScore: number): GameS
 
 export const verifyGameStateHash = (state: GameStateHash): boolean => {
   const expected = generateGameStateHash(state.phase, state.playerScore);
-  // Timestamp farklı olacak, sadece format kontrolü
-  return state.hash.length > 0 && typeof state.hash === 'string';
+  return state.hash === expected.hash;
 };

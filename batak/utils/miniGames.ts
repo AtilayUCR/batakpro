@@ -320,7 +320,8 @@ export const canSpinWheel = (): boolean => {
   const stored = localStorage.getItem('batakLuckyWheel');
   if (!stored) return true;
   
-  const wheel: LuckyWheel = JSON.parse(stored);
+  let wheel: LuckyWheel;
+  try { wheel = JSON.parse(stored); } catch { return true; }
   if (!wheel.lastSpinDate) return true;
   
   const lastSpin = new Date(wheel.lastSpinDate).toDateString();
@@ -346,12 +347,11 @@ export const spinWheel = (): { slice: WheelSlice; wheel: LuckyWheel } => {
   
   // Wheel state güncelle
   const stored = localStorage.getItem('batakLuckyWheel');
-  let wheel: LuckyWheel = stored ? JSON.parse(stored) : {
-    id: 'wheel_1',
-    lastSpinDate: null,
-    totalSpins: 0,
-    totalWinnings: 0,
-  };
+  const defaultWheel: LuckyWheel = { id: 'wheel_1', lastSpinDate: null, totalSpins: 0, totalWinnings: 0 };
+  let wheel: LuckyWheel = defaultWheel;
+  if (stored) {
+    try { wheel = JSON.parse(stored); } catch { wheel = defaultWheel; }
+  }
   
   wheel.lastSpinDate = new Date().toISOString();
   wheel.totalSpins += 1;
@@ -433,7 +433,7 @@ export const generateSpeedMatch = (pairs: number = 6): SpeedMatch => {
   
   // Best time
   const stored = localStorage.getItem('batakSpeedMatchBest');
-  const bestTime = stored ? parseInt(stored) : null;
+  const bestTime = stored ? (parseInt(stored, 10) || null) : null;
   
   return {
     id: `speedmatch_${Date.now()}`,
@@ -474,7 +474,8 @@ export const flipSpeedMatchCard = (
   }
   
   // İkinci kart çevrildi - eşleşme kontrolü
-  const firstCard = updatedCards.find(c => c.id === firstFlippedId)!;
+  const firstCard = updatedCards.find(c => c.id === firstFlippedId);
+  if (!firstCard) return { ...game, cards: updatedCards };
   const secondCard = updatedCards[cardIndex];
   
   const isMatch = firstCard.suit === secondCard.suit && firstCard.rank === secondCard.rank;
@@ -578,7 +579,7 @@ export const generateTrumpGuess = (): TrumpGuess => {
   
   // Streak bilgisi
   const stored = localStorage.getItem('batakTrumpGuessStreak');
-  const streak = stored ? parseInt(stored) : 0;
+  const streak = stored ? (parseInt(stored, 10) || 0) : 0;
   
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);

@@ -261,30 +261,33 @@ export const prepareRewardedAd = async (): Promise<boolean> => {
 };
 
 export const showRewardedAd = async (onReward: (reward: number) => void): Promise<boolean> => {
-  // Reklamsız mı kontrol et - Rewarded her zaman izlenebilir (ödül için)
+  const listeners: { remove: () => void }[] = [];
+  
+  const cleanup = () => {
+    listeners.forEach(l => { try { l.remove(); } catch { /* already removed */ } });
+    listeners.length = 0;
+  };
   
   try {
-    const rewardListener = AdMob.addListener(RewardAdPluginEvents.Rewarded, (reward: AdMobRewardItem) => {
-      console.log('User earned reward:', reward);
+    listeners.push(AdMob.addListener(RewardAdPluginEvents.Rewarded, (reward: AdMobRewardItem) => {
       onReward(reward.amount || 50);
-      rewardListener.remove();
-    });
+    }) as any);
 
-    const failedListener = AdMob.addListener(RewardAdPluginEvents.FailedToShow, () => {
+    listeners.push(AdMob.addListener(RewardAdPluginEvents.FailedToShow, () => {
       console.error('Rewarded ad failed to show');
-      failedListener.remove();
-    });
+      cleanup();
+    }) as any);
 
-    const dismissedListener = AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
-      console.log('Rewarded ad dismissed');
-      dismissedListener.remove();
-      prepareRewardedAd(); // Yeni reklam hazırla
-    });
+    listeners.push(AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
+      cleanup();
+      prepareRewardedAd();
+    }) as any);
 
     await AdMob.showRewardVideoAd();
     return true;
   } catch (error) {
     console.error('Failed to show rewarded ad:', error);
+    cleanup();
     prepareRewardedAd();
     return false;
   }
@@ -314,22 +317,29 @@ export const showInterstitialAd = async (): Promise<boolean> => {
     return false;
   }
   
+  const listeners: { remove: () => void }[] = [];
+  
+  const cleanup = () => {
+    listeners.forEach(l => { try { l.remove(); } catch { /* already removed */ } });
+    listeners.length = 0;
+  };
+  
   try {
-    const dismissedListener = AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
-      console.log('Interstitial ad dismissed');
-      dismissedListener.remove();
-      prepareInterstitialAd(); // Yeni reklam hazırla
-    });
+    listeners.push(AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
+      cleanup();
+      prepareInterstitialAd();
+    }) as any);
 
-    const failedListener = AdMob.addListener(InterstitialAdPluginEvents.FailedToShow, () => {
+    listeners.push(AdMob.addListener(InterstitialAdPluginEvents.FailedToShow, () => {
       console.error('Interstitial ad failed to show');
-      failedListener.remove();
-    });
+      cleanup();
+    }) as any);
 
     await AdMob.showInterstitial();
     return true;
   } catch (error) {
     console.error('Failed to show interstitial ad:', error);
+    cleanup();
     prepareInterstitialAd();
     return false;
   }
@@ -349,7 +359,7 @@ const INTERSTITIAL_SCHEDULE = [3, 5, 7, 9, 11, 13, 15, 17, 19]; // Sonra her 2'd
 const getInterstitialState = (): InterstitialState => {
   const stored = localStorage.getItem('batakInterstitialState');
   if (stored) {
-    return JSON.parse(stored);
+    try { return JSON.parse(stored); } catch { /* corrupted data */ }
   }
   return {
     gameCount: 0,
@@ -414,10 +424,10 @@ const getDailyAdCounts = (): DailyAdCounts => {
   const stored = localStorage.getItem('batakDailyAdCounts');
   
   if (stored) {
-    const data = JSON.parse(stored);
-    if (data.date === today) {
-      return data;
-    }
+    try {
+      const data = JSON.parse(stored);
+      if (data.date === today) return data;
+    } catch { /* corrupted data */ }
   }
   
   return { date: today, rewarded: 0, interstitial: 0 };

@@ -116,6 +116,7 @@ export const playSound = async (
     const soundInstance = audio.cloneNode() as HTMLAudioElement;
     soundInstance.volume = options?.volume ?? 0.5;
     soundInstance.playbackRate = options?.playbackRate ?? 1;
+    soundInstance.onended = () => { soundInstance.onended = null; soundInstance.src = ''; };
     
     await soundInstance.play();
   } catch (error) {

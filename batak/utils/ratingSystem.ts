@@ -61,17 +61,18 @@ const getDefaultState = (): RatingState => ({
 const getRatingState = (): RatingState => {
   const stored = localStorage.getItem('batakRatingState');
   if (stored) {
-    const state = JSON.parse(stored);
-    
-    // Yıl kontrolü - yeni yıl başladıysa counter'ı sıfırla
-    const yearStart = new Date(state.yearStartDate);
-    const now = new Date();
-    if (now.getFullYear() > yearStart.getFullYear()) {
-      state.yearlyPromptCount = 0;
-      state.yearStartDate = Date.now();
-    }
-    
-    return state;
+    try {
+      const state = JSON.parse(stored);
+      
+      const yearStart = new Date(state.yearStartDate);
+      const now = new Date();
+      if (yearStart.getTime() && now.getFullYear() > yearStart.getFullYear()) {
+        state.yearlyPromptCount = 0;
+        state.yearStartDate = Date.now();
+      }
+      
+      return state;
+    } catch { /* corrupted data */ }
   }
   return getDefaultState();
 };

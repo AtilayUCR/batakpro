@@ -63,14 +63,13 @@ export const isValidMove = (
   trickCount: number,
   rules: HouseRules
 ): boolean => {
-  // İlk elde koz yasağı
-  if (rules.ilkElKozYasak && trickCount === 0 && card.suit === trumpSuit) {
-      const otherCards = hand.filter(c => c.suit !== trumpSuit);
-      if (otherCards.length > 0) return false;
-  }
-
   if (currentTrick.length === 0) {
-    // Lider oyuncu - koz kırılmadan koz atılamaz
+    // Lider oyuncu - ilk elde koz yasağı (sadece lidere uygulanır)
+    if (rules.ilkElKozYasak && trickCount === 0 && card.suit === trumpSuit) {
+        const otherCards = hand.filter(c => c.suit !== trumpSuit);
+        if (otherCards.length > 0) return false;
+    }
+    // Koz kırılmadan koz atılamaz
     if (trumpSuit && card.suit === trumpSuit && !spadesBroken) {
         const hasNonTrump = hand.some(c => c.suit !== trumpSuit);
         if (hasNonTrump) return false;
@@ -312,7 +311,7 @@ const BOT_NAMES = [
 
 export const getRandomBotName = (excludeNames: string[] = []): string => {
   const availableNames = BOT_NAMES.filter(name => !excludeNames.includes(name));
-  return availableNames[Math.floor(Math.random() * availableNames.length)];
+  return availableNames[Math.floor(Math.random() * availableNames.length)] || BOT_NAMES[0];
 };
 
 export const getThreeUniqueBotNames = (): string[] => {
@@ -484,8 +483,8 @@ export const calculateRoundScore = (
     // Eşli Batak: Takım 0-2 vs 1-3
     const team0Score = players[0].tricksWon + players[2].tricksWon;
     const team1Score = players[1].tricksWon + players[3].tricksWon;
-    const team0Bid = players[0].currentBid + players[2].currentBid;
-    const team1Bid = players[1].currentBid + players[3].currentBid;
+    const team0Bid = Math.max(0, players[0].currentBid) + Math.max(0, players[2].currentBid);
+    const team1Bid = Math.max(0, players[1].currentBid) + Math.max(0, players[3].currentBid);
     
     // Takım 0-2
     if (team0Score < team0Bid) {
@@ -585,11 +584,11 @@ export const calculateRoundScore = (
             penalty -= missedBy * 5;
           }
           
-          if (rules.onikiBatar && player.currentBid === 12 && player.tricksWon === 0) {
-            penalty = -120;
+          if (rules.onikiBatar && player.currentBid >= 12 && player.tricksWon < player.currentBid) {
+            penalty = -(player.currentBid * 15);
           }
           if (rules.macaCezasi && player.tricksWon === 0) {
-            penalty *= 1.5;
+            penalty *= 1.5; // Hiç el almama cezası
           }
           scores[idx] = Math.floor(penalty);
           batakPlayers.push(idx);
@@ -645,12 +644,12 @@ export const calculateRoundScore = (
             penalty -= missedBy * 5; // Her kaçırılan el için -5 ekstra
           }
           
-          if (rules.onikiBatar && player.currentBid === 12 && player.tricksWon === 0) {
-            penalty = -120; // 12 batak özel ceza
+          if (rules.onikiBatar && player.currentBid >= 12 && player.tricksWon < player.currentBid) {
+            penalty = -(player.currentBid * 15);
           }
           
           if (rules.macaCezasi && player.tricksWon === 0) {
-            penalty *= 1.5; // Maça cezası
+            penalty *= 1.5; // Hiç el almama cezası
           }
           
           scores[idx] = Math.floor(penalty);
@@ -685,13 +684,18 @@ export const calculateRoundScore = (
 };
 
 export const sortHandWithTrump = (hand: Card[], trumpSuit: Suit | null): Card[] => {
-  const suitOrder = trumpSuit 
-    ? { [trumpSuit]: 5, [Suit.SPADES]: 4, [Suit.HEARTS]: 3, [Suit.CLUBS]: 2, [Suit.DIAMONDS]: 1 }
-    : { [Suit.SPADES]: 4, [Suit.HEARTS]: 3, [Suit.CLUBS]: 2, [Suit.DIAMONDS]: 1 };
+  const getSuitOrder = (suit: Suit): number => {
+    if (trumpSuit && suit === trumpSuit) return 5;
+    if (suit === Suit.SPADES) return 4;
+    if (suit === Suit.HEARTS) return 3;
+    if (suit === Suit.CLUBS) return 2;
+    if (suit === Suit.DIAMONDS) return 1;
+    return 0;
+  };
   
   return [...hand].sort((a, b) => {
-    const suitA = suitOrder[a.suit] || 0;
-    const suitB = suitOrder[b.suit] || 0;
+    const suitA = getSuitOrder(a.suit);
+    const suitB = getSuitOrder(b.suit);
     if (suitA !== suitB) return suitB - suitA;
     return b.rank - a.rank;
   });

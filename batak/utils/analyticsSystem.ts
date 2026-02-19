@@ -296,7 +296,7 @@ export const logGameModePlay = async (mode: GameMode): Promise<void> => {
     });
     
     // Mod bazlı spesifik event (daha detaylı analiz için)
-    const modeEventName = `play_${mode.toLowerCase().replace(/_/g, '_')}`;
+    const modeEventName = `play_${mode.toLowerCase().replace(/\s+/g, '_')}`;
     await FirebaseAnalytics.logEvent({
       name: modeEventName,
       params: {},

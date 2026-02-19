@@ -41,30 +41,28 @@ export const initializePushNotifications = async (): Promise<boolean> => {
 // ============================================
 // EVENT LISTENERS
 // ============================================
+let listenersSetup = false;
+
 const setupListeners = (): void => {
-  // Token alındığında
+  if (listenersSetup) return;
+  listenersSetup = true;
+  
+  try { PushNotifications.removeAllListeners(); } catch { /* ignore */ }
+  
   PushNotifications.addListener('registration', (token: Token) => {
-    console.log('Push registration success, token:', token.value);
     fcmToken = token.value;
-    
-    // Token'ı localStorage'a kaydet (backend'e göndermek için)
     localStorage.setItem('batakFCMToken', token.value);
   });
   
-  // Kayıt hatası
   PushNotifications.addListener('registrationError', (error: any) => {
     console.error('Push registration error:', error);
   });
   
-  // Uygulama açıkken bildirim geldiğinde
   PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
-    console.log('Push notification received:', notification);
     handleNotification(notification);
   });
   
-  // Bildirime tıklandığında
   PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
-    console.log('Push notification action performed:', action);
     handleNotificationAction(action);
   });
 };

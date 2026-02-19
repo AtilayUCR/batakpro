@@ -37,7 +37,7 @@ export interface ReferralStats {
 export const getReferralStats = (): ReferralStats => {
   const stored = localStorage.getItem('batakReferralStats');
   if (stored) {
-    return JSON.parse(stored);
+    try { return JSON.parse(stored); } catch { /* corrupted data */ }
   }
   return {
     totalInvites: 0,
@@ -172,7 +172,8 @@ ${storeUrl}`;
 
 // Kullanıcı başka birinin kodunu girdiğinde
 export const applyReferralCode = (code: string): { success: boolean; message: string } => {
-  const usedCodes = JSON.parse(localStorage.getItem('batakUsedReferralCodes') || '[]');
+  let usedCodes: string[] = [];
+  try { usedCodes = JSON.parse(localStorage.getItem('batakUsedReferralCodes') || '[]'); } catch { /* corrupted */ }
   const myCode = localStorage.getItem('batakReferralCode');
   
   // Kendi kodunu kullanmaya çalışıyor mu?
