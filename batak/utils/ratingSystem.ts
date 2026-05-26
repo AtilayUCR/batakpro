@@ -20,14 +20,14 @@ const getPlatform = (): 'ios' | 'android' | 'web' => {
 // ============================================
 const RATING_CONFIG = {
   ios: {
-    minWinsBeforePrompt: 3,          // Minimum 3 kazanç
+    minWinsBeforePrompt: 2,          // Minimum 2 kazanç
     daysBetweenPrompts: 120,         // 4 ayda bir (yılda ~3 kez)
     daysAfterLater: 14,              // "Sonra" seçilirse 14 gün bekle
     daysAfterNegative: 90,           // Olumsuz seçilirse 90 gün bekle
     maxPromptsPerYear: 3,            // Apple limiti
   },
   android: {
-    minWinsBeforePrompt: 3,          // Minimum 3 kazanç
+    minWinsBeforePrompt: 2,          // Minimum 2 kazanç
     daysBetweenPrompts: 7,           // Haftada 1
     daysAfterLater: 3,               // "Sonra" seçilirse 3 gün bekle
     daysAfterNegative: 30,           // Olumsuz seçilirse 30 gün bekle
@@ -134,7 +134,7 @@ export const shouldShowRatingPrompt = (): boolean => {
   }
   
   // Belirli kazanç milestones'larında göster
-  const triggerWins = [3, 7, 15, 30, 50, 75, 100];
+  const triggerWins = [2, 5, 10, 20, 35, 50, 75, 100];
   if (triggerWins.includes(state.totalWins)) {
     return true;
   }
